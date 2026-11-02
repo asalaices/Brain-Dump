@@ -4,6 +4,7 @@ import os
 import json
 import sqlite3
 from pathlib import Path
+from .contract import validate_record
 
 SCHEMA_VERSION = '2'
 
@@ -19,14 +20,20 @@ def flatten(obj, path=""):
     else:
         yield path,"value",json.dumps(obj,ensure_ascii=False) if isinstance(obj,(bool,type(None))) else str(obj)
 
-def records(root):
+def records(root, contract=None):
     base=Path(root).resolve(strict=True)
     if not base.is_dir(): raise ValueError("root must be a directory")
     for p in sorted(base.rglob("*.json")):
         if p.is_symlink() or not p.is_file() or not p.resolve().is_relative_to(base): continue
         raw=p.read_bytes()
         if len(raw)>1048576: raise ValueError("oversized JSON record")
-        yield p.relative_to(base).as_posix(),hashlib.sha256(raw).hexdigest(),json.loads(raw)
+        rel = p.relative_to(base).as_posix()
+        obj = json.loads(raw)
+        if contract == "v3":
+            validate_record(obj, rel if rel.startswith("Brain-Bridge/") else "Brain-Bridge/" + rel)
+        elif contract is not None:
+            raise ValueError("Unsupported JSON contract")
+        yield rel,hashlib.sha256(raw).hexdigest(),obj
 
 def json_search(root,term):
     if not term: raise ValueError("term required")
@@ -44,8 +51,8 @@ def connect(database):
     conn.execute("CREATE TABLE IF NOT EXISTS nodes (file TEXT,pointer TEXT,kind TEXT,value TEXT)")
     return conn
 
-def rebuild(root,database):
-    items=list(records(root))
+def rebuild(root,database,contract=None):
+    items=list(records(root, contract=contract))
     conn=connect(database)
     try:
         with conn:
