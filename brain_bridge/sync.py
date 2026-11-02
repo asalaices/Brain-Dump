@@ -14,7 +14,7 @@ def _git(repo, *args):
         raise SyncError("Git operation failed: " + " ".join(args)) from exc
     return p.stdout.strip()
 
-def sync(repo, expected_remote, branch, records_dir, database):
+def sync(repo, expected_remote, branch, records_dir, database, contract=None):
     """Sync an existing clean checkout; never clone, reset, or force-pull."""
     repo = Path(repo).expanduser().resolve(strict=True)
     if not repo.is_dir() or not (repo / ".git").exists():
@@ -38,7 +38,7 @@ def sync(repo, expected_remote, branch, records_dir, database):
     _git(repo, "fetch", "--no-tags", "origin", branch)
     _git(repo, "merge", "--ff-only", "FETCH_HEAD")
     head = _git(repo, "rev-parse", "HEAD")
-    count = rebuild(record_root, db)
+    count = rebuild(record_root, db, contract=contract)
     if not is_fresh(record_root, db):
         raise SyncError("SQLite index verification failed")
     return {"commit": head, "indexed": count, "fresh": True}
