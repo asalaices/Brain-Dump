@@ -1,0 +1,9 @@
+{
+  "schema_version": 4,
+  "id": "<UUIDv4>",
+  "timestamp": "<ISO8601>",
+  "agent": {"provider": "<claude|copilot|chatgpt>"},
+  "scope": {"tenant": "<TENANT>", "project": "<PROJECT>"},
+  "title": "<TITLE>",
+  "tasks": [], "blockers": [], "evidence": []
+}
