@@ -1,0 +1,7 @@
+{
+  "synthetic": true,
+  "schema_version": 4,
+  "id": "11111111-1111-4111-8111-111111111111",
+  "title": "Synthetic prime record",
+  "tasks": [{"id":"DEMO-001","status":"TODO"}]
+}
