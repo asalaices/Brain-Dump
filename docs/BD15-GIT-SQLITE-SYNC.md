@@ -7,7 +7,7 @@ Example, using a **private** authorized data checkout:
 ```sh
 python -m brain_bridge sync \
   --repo "$HOME/brain-data/Synapses" \
-  --remote "git@github.com:asalaices/Brain-Bridge-Synapses.git" \
+  --remote "git@github.com:asalaices/Brain-Dump-Synapses.git" \
   --branch main \
   --records . \
   --db "$HOME/.local/state/brain-bridge/synapses.sqlite"
