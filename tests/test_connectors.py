@@ -72,6 +72,12 @@ class RegistryTests(unittest.TestCase):
     def test_only_committed_named_connectors_are_selected(self):
         self.assertEqual(self.load()['project_id'],'55')
         with self.assertRaises(AccessDenied):self.load('unregistered')
+    def test_github_evidence_registry_uses_verified_registration_context(self):
+        self.config['connectors']=[{'name':'ci','provider':'github','repository':'example/code','repository_id':'123'}]
+        self.assertEqual(self.load()['provider'],'github')
+        self.config['connectors'][0]['repository_id']='0123'
+        with self.assertRaises(AccessDenied):self.load()
+
     def test_duplicate_and_unknown_config_fields_deny(self):
         self.config['connectors'].append(dict(self.config['connectors'][0]))
         with self.assertRaises(AccessDenied):self.load()

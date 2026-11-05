@@ -30,6 +30,14 @@ def evidence_graph(items,source_id,tasks=None,overlays=None):
             for old in supersedes:
                 if isinstance(old,str):
                     references.add(old);edges.add((record,node_id('record',source_id+':'+old),'supersedes'))
+            for reference in entry.get('references',[]):
+                if isinstance(reference,dict) and reference.get('type')=='github_evidence':
+                    fields=('observation_id','resource_id','snapshot_sha256','url','observed_at','kind')
+                    if not all(isinstance(reference.get(field),str) and reference[field] for field in fields):
+                        raise ValueError('Malformed GitHub evidence reference')
+                    target=node('github_evidence',reference['observation_id'],reference['resource_id'],
+                                evidence_kind=reference['kind'],**{field:reference[field] for field in fields if field!='kind'})
+                    edges.add((record,target,'evidenced_by'))
             provenance=entry.get('provenance',(overlays or {}).get(entry['id'],{}))
             nodes[record]['provenance_source']='native' if 'provenance' in entry else ('overlay' if entry['id'] in (overlays or {}) else 'unavailable')
             if not isinstance(provenance,dict):continue

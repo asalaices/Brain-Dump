@@ -36,7 +36,7 @@ def number(value):
 
 
 def sha(value):
-    if not isinstance(value,str) or not re.fullmatch(r'[0-9a-f]{40,64}',value):raise ConnectorError('Provider commit must be complete')
+    if not isinstance(value,str) or not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})',value):raise ConnectorError('Provider commit must be complete')
     return value
 
 
@@ -70,7 +70,7 @@ class Transport:
             raise ConnectorError('Authenticated Jenkins request failed') from None
 
 
-def load_connector(identity_repo,name,authority=None):
+def load_connector(identity_repo,name,authority=None,with_context=False):
     api=authority or GitHubAuthority()
     identity,code_slug,code_commit=trusted_registration(identity_repo,api)
     config=document(content_at(api,code_slug,code_commit,'.brain-bridge/connectors.json'))
@@ -79,12 +79,12 @@ def load_connector(identity_repo,name,authority=None):
     for item in config['connectors']:
         if not isinstance(item,dict):raise AccessDenied('Malformed connector registration')
         provider=item.get('provider');common={'name','provider'}
-        fields={'github_actions':{'repository','repository_id'},'gitlab':{'host','project_id'},'jenkins':{'job_url','username_env','token_env'}}
+        fields={'github':{'repository','repository_id'},'github_actions':{'repository','repository_id'},'gitlab':{'host','project_id'},'jenkins':{'job_url','username_env','token_env'}}
         if provider not in fields or set(item)!=common|fields[provider]:raise AccessDenied('Unsupported connector contract')
         label=item['name']
         if not isinstance(label,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*',label) or label in names:raise AccessDenied('Invalid or duplicate connector name')
         names.add(label)
-        if provider=='github_actions':
+        if provider in ('github','github_actions'):
             if not isinstance(item['repository'],str) or github_slug('https://github.com/'+item['repository']+'.git')!=item['repository']:raise AccessDenied('Invalid GitHub connector repository')
             repository_id(item['repository_id'])
         elif provider=='gitlab':
@@ -98,6 +98,8 @@ def load_connector(identity_repo,name,authority=None):
         if label==name:selected=item
     if selected is None:raise AccessDenied('Connector is not explicitly registered')
     if api.api("repos/"+code_slug+"/commits/main").get("sha")!=code_commit:raise AccessDenied("Connector registration changed during authorization")
+    if with_context:
+        return {'spec':selected,'registration':{'identity_key':identity.key,'repository':code_slug,'commit':code_commit}}
     return selected
 
 

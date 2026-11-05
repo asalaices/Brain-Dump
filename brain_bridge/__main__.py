@@ -9,6 +9,7 @@ from .sync import sync
 from .authority import initialize_identity
 from .publication import propose_record
 from .connectors import observe_named
+from .github import collect_named
 from .migration import plan_migration,apply_migration
 from .managed import managed_search, managed_index, managed_sync, managed_graph
 
@@ -43,6 +44,10 @@ def parser():
     graph.add_argument('--identity-repo',required=True);graph.add_argument('--repo',required=True);graph.add_argument('--format',choices=['json','dot','mermaid'],default='json')
     observation=sub.add_parser('observe',help='Read one run from a committed named CI connector; never trigger jobs')
     observation.add_argument('--identity-repo',required=True);observation.add_argument('--connector',required=True);observation.add_argument('--run-id',required=True)
+    collection=sub.add_parser('collect',help='Read one selected GitHub object from a reviewed named connector; never update tasks')
+    collection.add_argument('--identity-repo',required=True);collection.add_argument('--connector',required=True)
+    collection.add_argument('--kind',choices=['issue','pull_request','commit','run'],required=True)
+    collection.add_argument('--id',required=True);collection.add_argument('--include-body',action='store_true',help='Explicitly include untrusted issue/PR body or commit message')
     publication=sub.add_parser('publish',help='Plan an append-only private-source record PR; never merge or push main')
     publication.add_argument('--identity-repo',required=True);publication.add_argument('--repo',required=True);publication.add_argument('--record',required=True)
     publication.add_argument('--execute',action='store_true');publication.add_argument('--yes',action='store_true')
@@ -59,6 +64,7 @@ def main(argv=None):
             with open(args.plan) as file:plan=json.load(file)
             result=apply_migration(args.source_repo,args.destination_repo,plan,args.execute,args.yes)
         elif args.action=='graph':result=managed_graph(args.identity_repo,args.repo,args.format)
+        elif args.action=='collect':result=collect_named(args.identity_repo,args.connector,args.kind,args.id,include_body=args.include_body)
         elif args.action=='observe':result=observe_named(args.identity_repo,args.connector,args.run_id)
         elif args.action=='publish':result=propose_record(args.identity_repo,args.repo,args.record,args.execute,args.yes)
         elif args.action=='identity':result=initialize_identity(args.repo,args.execute)

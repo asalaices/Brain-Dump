@@ -24,3 +24,5 @@ Observers verify the registered repository/project and selected run/build identi
 The graph command reauthorizes managed source access and derives relationships only from explicit coverage, supersedes and provenance fields. Library callers can attach an authoritative task snapshot; task states are never inferred from prose or next_steps. Missing prerequisites remain unresolved and cycles are reported. JSON is deterministic; DOT/Mermaid are returned as a content field in the same versioned JSON response. Labels are escaped, not accepted as diagram commands or HTML. No graph is uploaded automatically.
 
 Provider references: [GitLab pipelines API](https://docs.gitlab.com/api/pipelines/), [authenticated glab API transport](https://docs.gitlab.com/cli/api/), [Jenkins remote API](https://www.jenkins.io/doc/book/using/remote-access-api/).
+
+The selected-object GitHub connector additionally collects issues, PRs, commits and workflow runs, projects explicit Brain/task evidence, and rechecks registration before returning results. See [GitHub connector](GITHUB-CONNECTOR.md). This does not activate any source or infer task completion.
