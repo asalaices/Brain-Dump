@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """Strict cooperative identity and separate read/write grants.
 
 GitHub enforces repository access. This module never treats a UUID as proof

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """Brain Bridge CLI: explicit local utilities and authenticated managed sources."""
 import argparse
 import json
@@ -5,13 +7,17 @@ import sys
 from .store import rebuild, search
 from .sync import sync
 from .authority import initialize_identity
-from .managed import managed_search, managed_index, managed_sync
+from .publication import propose_record
+from .connectors import observe_named
+from .migration import plan_migration,apply_migration
+from .managed import managed_search, managed_index, managed_sync, managed_graph
 
 VERSION = '0.2.0'
 
 def parser():
     cli=argparse.ArgumentParser(description=__doc__)
     cli.add_argument('--version',action='version',version='brain-bridge '+VERSION)
+    cli.add_argument('--license',action='version',help='Show copyright, license and warranty notice',version='Copyright (C) 2026 Creative Software Development. AGPL-3.0-only; no warranty. See LICENSE and NOTICE, https://www.gnu.org/licenses/agpl-3.0.html')
     sub=cli.add_subparsers(dest='action',required=True)
     s=sub.add_parser('search',help='Local authorized JSON utility; no managed access enforcement')
     s.add_argument('--root',required=True);s.add_argument('--term',required=True)
@@ -28,6 +34,18 @@ def parser():
         command.add_argument('--identity-repo',required=True);command.add_argument('--repo',required=True);command.add_argument('--cache-dir',required=True)
         if name=='managed-search':
             command.add_argument('--term',required=True);command.add_argument('--backend',choices=['json','sqlite','auto'],default='auto')
+    migration=sub.add_parser('migrate-plan',help='Inventory a private byte-preserving rehearsal; never switch production')
+    migration.add_argument('--source-repo',required=True);migration.add_argument('--destination-repo',required=True);migration.add_argument('--source-id',required=True);migration.add_argument('--destination-id',required=True)
+    migration.add_argument('--source-ref',default='main');migration.add_argument('--destination-ref',default='main');migration.add_argument('--namespace',choices=['Brain-Bridge','records'],default='Brain-Bridge')
+    apply=sub.add_parser('migrate-apply',help='Apply an exact reviewed plan to a private working copy only')
+    apply.add_argument('--source-repo',required=True);apply.add_argument('--destination-repo',required=True);apply.add_argument('--plan',required=True);apply.add_argument('--execute',action='store_true');apply.add_argument('--yes',action='store_true')
+    graph=sub.add_parser('graph',help='Generate authorized record/evidence graphs as JSON, DOT or Mermaid')
+    graph.add_argument('--identity-repo',required=True);graph.add_argument('--repo',required=True);graph.add_argument('--format',choices=['json','dot','mermaid'],default='json')
+    observation=sub.add_parser('observe',help='Read one run from a committed named CI connector; never trigger jobs')
+    observation.add_argument('--identity-repo',required=True);observation.add_argument('--connector',required=True);observation.add_argument('--run-id',required=True)
+    publication=sub.add_parser('publish',help='Plan an append-only private-source record PR; never merge or push main')
+    publication.add_argument('--identity-repo',required=True);publication.add_argument('--repo',required=True);publication.add_argument('--record',required=True)
+    publication.add_argument('--execute',action='store_true');publication.add_argument('--yes',action='store_true')
     for command in sub.choices.values():
         command.add_argument('--json',action='store_true',help='Emit JSON (the default)')
         command.add_argument('--pretty',action='store_true',help='Indent the same JSON document')
@@ -36,16 +54,23 @@ def parser():
 def main(argv=None):
     args=parser().parse_args(argv)
     try:
-        if args.action=='identity':result=initialize_identity(args.repo,args.execute)
+        if args.action=='migrate-plan':result={'plan':plan_migration(args.source_repo,args.destination_repo,args.source_id,args.destination_id,args.source_ref,args.destination_ref,args.namespace)}
+        elif args.action=='migrate-apply':
+            with open(args.plan) as file:plan=json.load(file)
+            result=apply_migration(args.source_repo,args.destination_repo,plan,args.execute,args.yes)
+        elif args.action=='graph':result=managed_graph(args.identity_repo,args.repo,args.format)
+        elif args.action=='observe':result=observe_named(args.identity_repo,args.connector,args.run_id)
+        elif args.action=='publish':result=propose_record(args.identity_repo,args.repo,args.record,args.execute,args.yes)
+        elif args.action=='identity':result=initialize_identity(args.repo,args.execute)
         elif args.action=='managed-search':result=managed_search(args.identity_repo,args.repo,args.term,args.cache_dir,args.backend)
         elif args.action=='managed-index':result=managed_index(args.identity_repo,args.repo,args.cache_dir)
         elif args.action=='managed-sync':result=managed_sync(args.identity_repo,args.repo,args.cache_dir)
         elif args.action=='index':result={'indexed':rebuild(args.root,args.db,args.contract)}
         elif args.action=='sync':result=sync(args.repo,args.remote,args.branch,args.records,args.db,args.contract)
         else:result={'results':search(args.root,args.term,args.backend,args.db)}
-        result['info']={'script':'brain_bridge','script_version':VERSION}
+        result['info']={'script':'brain_bridge','script_version':VERSION,'license':'AGPL-3.0-only','copyright':'2026 Creative Software Development'}
         print(json.dumps(result,ensure_ascii=False,indent=2 if args.pretty else None));return 0
     except (ValueError,RuntimeError,OSError) as exc:
-        print(json.dumps({'error':str(exc),'info':{'script':'brain_bridge','script_version':VERSION}}));return 1
+        print(json.dumps({'error':str(exc),'info':{'script':'brain_bridge','script_version':VERSION,'license':'AGPL-3.0-only','copyright':'2026 Creative Software Development'}}));return 1
 
 if __name__=='__main__':raise SystemExit(main())

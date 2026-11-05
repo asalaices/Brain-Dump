@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """Portable JSON keyword scanner and optional derived SQLite index. No network operations."""
 import hashlib
 import os

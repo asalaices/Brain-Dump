@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """The CLI is import-safe and JSON formatting does not change results."""
 import contextlib
 import importlib
@@ -13,6 +15,12 @@ class CLITests(unittest.TestCase):
         output=io.StringIO()
         with contextlib.redirect_stdout(output):importlib.import_module('brain_bridge.__main__')
         self.assertEqual(output.getvalue(),'')
+    def test_license_notice_names_the_original_author(self):
+        output=io.StringIO()
+        with contextlib.redirect_stdout(output),self.assertRaises(SystemExit) as stopped:main(['--license'])
+        self.assertEqual(stopped.exception.code,0)
+        self.assertIn('Creative Software Development',output.getvalue());self.assertIn('AGPL-3.0-only',output.getvalue())
+
     def test_json_and_pretty_have_the_same_document(self):
         with tempfile.TemporaryDirectory() as t:
             (Path(t)/'synthetic.json').write_text('{"nested":["needle"]}')

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """Managed reads must not bypass refreshed policy through local caches."""
 import json
 import subprocess

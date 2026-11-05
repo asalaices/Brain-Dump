@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """Ensure invalid v3 records cannot replace an existing SQLite index."""
 import copy
 import json
@@ -23,13 +25,17 @@ class PreIndexContractTests(unittest.TestCase):
             path.write_text(json.dumps(doc))
             self.assertEqual(rebuild(root, db, contract="v3"), 1)
             self.assertTrue(is_fresh(root, db))
-            original = sqlite3.connect(db).execute("SELECT COUNT(*) FROM nodes").fetchone()
+            con=sqlite3.connect(db)
+            original=con.execute("SELECT COUNT(*) FROM nodes").fetchone()
+            con.close()
             broken = copy.deepcopy(doc)
             broken["entry"]["context"].pop("coverage_since")
             path.write_text(json.dumps(broken))
             with self.assertRaises(ContractError):
                 rebuild(root, db, contract="v3")
-            after = sqlite3.connect(db).execute("SELECT COUNT(*) FROM nodes").fetchone()
+            con=sqlite3.connect(db)
+            after=con.execute("SELECT COUNT(*) FROM nodes").fetchone()
+            con.close()
             self.assertEqual(original, after)
 
     def test_version_rejected_before_database_creation(self):

@@ -1,13 +1,16 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools==84.2.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "brain-bridge-framework"
 version = "0.2.0"
 description = "Git-backed immutable memory and authenticated managed-source foundation"
+readme = "README.md"
 requires-python = ">=3.11"
-# License remains pending the owner's selection and rights audit.
+license = "AGPL-3.0-only"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "Creative Software Development"}]
 
 [project.scripts]
 brain-bridge = "brain_bridge.__main__:main"

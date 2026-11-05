@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 import copy
 import json
 import unittest
@@ -28,6 +30,15 @@ class ContractTests(unittest.TestCase):
     def test_provenance_collections_and_coverage_are_typed(self):
         self.record["entry"]["provenance"]["users"] = {}
         with self.assertRaises(ContractError): validate_record(self.record)
+
+    def test_reject_unsupported_agent_timezone_and_forged_evidence(self):
+        for field,value in [('agent','synthetic-agent'),('agent','unknown')]:
+            invalid=copy.deepcopy(self.record);invalid['entry'][field]=value
+            with self.assertRaises(ContractError):validate_record(invalid)
+        invalid=copy.deepcopy(self.record);invalid['timezone']='UTC'
+        with self.assertRaises(ContractError):validate_record(invalid)
+        invalid=copy.deepcopy(self.record);invalid['entry']['provenance']['repositories']=[{'host':'github.com','full_name':'example/repo','repository_id':'not-a-numeric-id'}]
+        with self.assertRaises(ContractError):validate_record(invalid)
 
     def test_reject_wrong_version(self):
         self.record["schema_version"] = 4

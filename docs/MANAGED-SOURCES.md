@@ -12,7 +12,7 @@ The code repository must also have a reviewed, committed `.brain-bridge/sources.
 {"schema_version":1,"sources":[{"name":"synthetic-team","github_repository":"example/synthetic-data","github_repository_id":"456","branch":"main"}]}
 ```
 
-These are synthetic IDs, not active grants. Managed operations read identity and registry from the code checkout's committed HEAD, not modified working files. Each registered source has an exact authenticated numeric ID. Source IDs and names must be unique. A URL alone does not establish identity.
+These are synthetic IDs, not active grants. Managed operations refresh identity and registry from the authenticated code repository's upstream main commit, not a local commit, proposed PR or working file. Each registered source has an exact authenticated numeric ID. Source IDs and names must be unique. A URL alone does not establish identity.
 
 The private data repository's reviewed upstream `.brain-bridge/trust.json` uses one strict contract:
 
@@ -40,4 +40,21 @@ Generic `search`, `index` and `sync` remain explicit local-file utilities. They 
 
 ## Evidence and limits
 
-Run `python3 -B -m unittest discover -s tests -v`. Tests use synthetic data, temporary Git repositories and mocked authenticated metadata; they do not activate credentials, modify organization permissions, send messages or migrate records. Current behavior has not established production SSO, GitLab/Jenkins/Teams/SNS integrations, a shared service, PR publication or a live enterprise deployment.
+Run `python3 -B -m unittest discover -s tests -v`. Tests use synthetic data, temporary Git repositories and mocked authenticated metadata; they do not activate credentials, modify organization permissions, send messages or migrate records. Current behavior has not established a live enterprise rollout, shared service or Teams/SNS/email dispatch. GitHub Actions/GitLab/Jenkins observation adapters and append-only PR publication have offline regression coverage; live provider acceptance remains separate.
+
+## Append-only record reviews
+
+```sh
+python3 -m brain_bridge publish --identity-repo /path/to/code --repo /path/to/private-data --record /private/draft-envelope.json --pretty
+```
+
+The default is a plan. Explicit `--execute --yes` proposes a dedicated record branch/PR; it never merges, pushes the default branch, or switches/stages the caller checkout. Operational record publication requires a private destination, actual GitHub pull/push permissions and independent reader/writer grants. New records must be valid v3 envelopes with a published, ancestor-bound coverage baseline. New v3 uses canonical UUIDv4, America/Chicago and the master-01 publishing-agent profile; unsupported provider identities are not silently relabeled.
+
+The exact input bytes are preserved. Existing IDs/paths cannot be replaced. Retries reuse an identical dedicated branch/review and reject collisions or unrelated changes. Upstream policy is refreshed before push. A network/review failure preserves an already pushed branch and must be treated as pending, not merged. No real record is published by the offline tests.
+
+The code and examples now carry the owner's selected AGPL-3.0-only software license and Creative Software Development attribution. That does not relicense private records or provide permission to disclose them.
+
+
+## Private instance configuration
+
+The installed framework package can be public while the selected identity/configuration repository is private. Use a private, separately permissioned instance/configuration repository for nonpublic source inventories, Jenkins endpoints, recipient addresses or tenant identifiers. Do not commit those operational details to the public framework. The identity repository passed to the CLI is the explicitly selected instance: its upstream numeric repository ID and UUID are verified. All deployments require their own reviewed identity/source registration; no shared example UUID or credential is installed automatically.

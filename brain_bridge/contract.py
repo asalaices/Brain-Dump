@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """Validation of canonical master-01 Brain Bridge v3 JSON envelopes.
 
 This module does not rewrite or discard fields; its job is pre-index validation.
@@ -35,17 +37,24 @@ def validate_record(record, path=None):
         raise ContractError("Invalid date") from exc
     if not isinstance(record["timezone"], str) or not record["timezone"].strip():
         raise ContractError("Invalid timezone")
+    if record["timezone"] != "America/Chicago":
+        raise ContractError("The master-01 v3 profile requires America/Chicago")
     entry = record["entry"]
     if not isinstance(entry, dict):
         raise ContractError("entry must be an object")
     for key, expected in ENTRY_FIELDS.items():
         if key not in entry or not isinstance(entry[key], expected):
             raise ContractError(f"Missing or invalid entry.{key}")
+    if entry["agent"] not in ("copilot","chatgpt"):
+        raise ContractError("The master-01 v3 profile requires a supported publishing agent")
+    validate_provenance(entry["provenance"])
     try:
         uid = UUID(entry["id"])
         moment = datetime.fromisoformat(entry["timestamp"])
     except (ValueError, TypeError, AttributeError) as exc:
         raise ContractError("Invalid entry id or timestamp") from exc
+    if uid.version != 4 or str(uid) != entry["id"]:
+        raise ContractError("New entry IDs must be canonical UUIDv4")
     if moment.tzinfo is None or moment.utcoffset() is None:
         raise ContractError("Timestamp must carry a timezone offset")
     try:
@@ -131,3 +140,69 @@ def validate_history(record, path=None):
 
 def record_entries(record):
     return record['entries'] if record.get('schema_version')==1 else [record['entry']]
+
+
+def validate_provenance(provenance):
+    """Validate provider-qualified evidence while retaining native identifiers."""
+    import json
+    from urllib.parse import urlsplit
+    collections={'users','repositories','issues','workflow_runs'}
+    if not isinstance(provenance,dict) or set(provenance)!=collections:
+        raise ContractError('Provenance must contain exactly its four collections')
+    def text(row,key):
+        value=row.get(key)
+        if not isinstance(value,str) or not value.strip():raise ContractError('Invalid evidence field: '+key)
+        return value
+    def url(value):
+        if not isinstance(value,str) or any(c.isspace() for c in value):raise ContractError('Invalid evidence URL')
+        parsed=urlsplit(value)
+        if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ContractError('Evidence URLs cannot carry credentials or query parameters')
+        return parsed
+    for collection,rows in provenance.items():
+        if not isinstance(rows,list):raise ContractError('Evidence collections must be arrays')
+        seen=set()
+        for row in rows:
+            if not isinstance(row,dict):raise ContractError('Evidence rows must be objects')
+            provider=row.get('provider','github_actions' if collection=='workflow_runs' else 'github')
+            if not isinstance(provider,str) or not provider.strip():raise ContractError('Invalid evidence provider')
+            text(row,'host')
+            if collection=='users':
+                text(row,'role')
+                if not any(isinstance(row.get(k),str) and row[k].strip() for k in ('login','user_id','account_id')):raise ContractError('Evidence user identity missing')
+            elif collection=='repositories':
+                text(row,'full_name');text(row,'repository_id')
+            elif collection=='issues':
+                for key in ('repository','number','relationship'):text(row,key)
+            elif provider=='github_actions':
+                for key in ('repository','run_id','run_attempt','workflow','head_sha'):text(row,key)
+            elif provider=='jenkins':
+                for key in ('job_url','build_url'):text(row,key)
+                if 'result' not in row or row['result'] not in (None,'SUCCESS','FAILURE','UNSTABLE','ABORTED','NOT_BUILT','UNKNOWN'):raise ContractError('Invalid Jenkins result')
+                for key in ('job_url','build_url'):
+                    if url(row[key]).netloc!=row['host']:raise ContractError('Jenkins evidence host mismatch')
+                if not re.search(r'/[0-9]+/?$',url(row['build_url']).path):raise ContractError('Jenkins build must be numbered')
+            elif provider=='bitbucket_pipelines':
+                text(row,'repository');text(row,'run_id')
+            else:
+                text(row,'run_id');text(row,'url')
+            for key in ('repository_id','number','run_id','run_attempt','user_id','account_id'):
+                if key in row:
+                    value=text(row,key)
+                    if provider in ('github','github_actions') and key!='account_id' and not re.fullmatch(r'[1-9][0-9]*',value):raise ContractError('GitHub evidence IDs must be positive decimal strings')
+            for key in ('full_name','repository'):
+                if key in row and not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',text(row,key)):raise ContractError('Invalid evidence repository name')
+            if 'head_sha' in row and not re.fullmatch(r'[0-9a-f]{40,64}',text(row,'head_sha')):raise ContractError('Evidence requires a complete commit ID')
+            if 'result' in row and row['result'] is not None:text(row,'result')
+            for key in ('url','job_url','build_url'):
+                if key in row:url(row[key])
+            if 'artifacts' in row:
+                if not isinstance(row['artifacts'],list):raise ContractError('Artifacts must be an array')
+                for artifact in row['artifacts']:
+                    if not isinstance(artifact,dict):raise ContractError('Invalid artifact')
+                    text(artifact,'name')
+                    if 'url' in artifact:url(artifact['url'])
+            fingerprint=json.dumps(row,sort_keys=True)
+            if fingerprint in seen:raise ContractError('Duplicate evidence relationship')
+            seen.add(fingerprint)
+    return provenance

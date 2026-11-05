@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """GitHub-authenticated, commit-bound metadata for managed Synapses access.
 
 Only the existing gh credential transport is used; tokens are never accepted,
@@ -60,13 +62,10 @@ class GitHubAuthority:
     def snapshot(self, identity_repo, source_repo, operation="read", branch="main"):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", branch):
             raise AccessDenied("Invalid trusted policy branch")
-        code_slug = github_slug(git(identity_repo, "remote", "get-url", "origin"))
-        identity = Identity.parse(git(identity_repo, "show", "HEAD:.brain-bridge/identity.json"))
-        code_info = self.api("repos/" + code_slug)
-        identity.verify_repository(code_info.get("id"))
+        identity,code_slug,code_commit=trusted_registration(identity_repo,self)
         source_slug = github_slug(git(source_repo, "remote", "get-url", "origin"))
         from .policy import document, repository_id
-        registry = document(git(identity_repo, "show", "HEAD:.brain-bridge/sources.json"))
+        registry = document(content_at(self,code_slug,code_commit,".brain-bridge/sources.json"))
         if set(registry)!={"schema_version","sources"} or type(registry.get("schema_version")) is not int or registry["schema_version"]!=1 or not isinstance(registry["sources"],list):
             raise AccessDenied("Invalid committed source registry")
         matches=[];names=set();identities=set()
@@ -91,6 +90,8 @@ class GitHubAuthority:
         permissions = info.get("permissions", {})
         if permissions.get("pull") is not True or (operation == "write" and permissions.get("push") is not True):
             raise AccessDenied("GitHub repository permissions do not permit this operation")
+        if operation=="write" and info.get("private") is not True:
+            raise AccessDenied("Operational record publication requires a private source repository")
         source_id = info.get("id")
         if type(source_id) is not int or source_id < 1:
             raise AccessDenied("Source repository identity is unavailable")
@@ -108,7 +109,32 @@ class GitHubAuthority:
         except (ValueError, KeyError, TypeError) as exc:
             raise AccessDenied("Trusted policy could not be decoded") from exc
         policy.require(identity, operation)
+        if self.api("repos/"+code_slug+"/commits/main").get("sha")!=code_commit:
+            raise AccessDenied("Trusted code registration changed during authorization")
         return Grant(identity.key, str(source_id), source_slug, head, branch, hashlib.sha256(policy_raw).hexdigest())
+
+
+def content_at(api,slug,commit,path):
+    response=api.api("repos/"+slug+"/contents/"+path+"?ref="+commit)
+    if not isinstance(response,dict) or response.get("encoding")!="base64" or response.get("type")!="file":
+        raise AccessDenied("Trusted registration file unavailable")
+    try:
+        raw=base64.b64decode(response["content"].replace("\n",""),validate=True)
+        if len(raw)>1048576:raise ValueError("oversized registration")
+        return raw
+    except (ValueError,KeyError,TypeError) as exc:
+        raise AccessDenied("Malformed trusted registration") from exc
+
+
+def trusted_registration(identity_repo,api):
+    slug=github_slug(git(identity_repo,"remote","get-url","origin"))
+    info=api.api("repos/"+slug)
+    commit=api.api("repos/"+slug+"/commits/main").get("sha")
+    if not isinstance(commit,str) or not re.fullmatch(r"[0-9a-f]{40}",commit):
+        raise AccessDenied("Trusted code main commit unavailable")
+    identity=Identity.parse(content_at(api,slug,commit,".brain-bridge/identity.json"))
+    identity.verify_repository(info.get("id"))
+    return identity,slug,commit
 
 
 def initialize_identity(repo, execute=False, authority=None):

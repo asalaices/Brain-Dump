@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 import tempfile,json,unittest
 from pathlib import Path
 from brain_bridge.store import json_search,rebuild,sqlite_search,is_fresh,search

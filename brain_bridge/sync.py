@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """Guarded, explicitly invoked Git-to-SQLite synchronization."""
 import subprocess
 from pathlib import Path
@@ -24,7 +26,7 @@ def sync(repo, expected_remote, branch, records_dir, database, contract=None, ex
         raise SyncError("Only an existing standalone Git checkout is supported")
     if not expected_remote or not branch or branch.startswith("-") or "/" in branch:
         raise SyncError("Explicit remote identity and simple branch name required")
-    if _git(repo, "rev-parse", "--show-toplevel") != str(repo):
+    if Path(_git(repo, "rev-parse", "--show-toplevel")).resolve() != repo:
         raise SyncError("Repository path must be the checkout root")
     if _git(repo, "remote", "get-url", "origin") != expected_remote:
         raise SyncError("Remote identity mismatch")

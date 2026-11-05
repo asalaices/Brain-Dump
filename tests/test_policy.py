@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """Synthetic negative authorization tests; no credentials or private records."""
 import base64
 import json
@@ -49,11 +51,16 @@ class PolicyTests(unittest.TestCase):
 
 class AuthorityTests(unittest.TestCase):
     def setUp(self):
-        self.code_id=123;self.source_id=456;self.can_pull=True;self.can_push=True;self.grants=policy([KEY],[KEY]);self.calls=[];self.registry_id="456"
+        self.code_id=123;self.source_id=456;self.can_pull=True;self.can_push=True;self.grants=policy([KEY],[KEY]);self.calls=[];self.registry_id="456";self.private=True
     def api(self,endpoint):
         self.calls.append(endpoint)
         if endpoint=='repos/example/code':return {'id':self.code_id}
-        if endpoint=='repos/example/data':return {'id':self.source_id,'permissions':{'pull':self.can_pull,'push':self.can_push}}
+        if endpoint=='repos/example/code/commits/main':return {'sha':'c'*40}
+        if endpoint.startswith('repos/example/code/contents/'):
+            obj=IDENTITY if '/identity.json?' in endpoint else {'schema_version':1,'sources':[{'name':'synthetic','github_repository':'example/data','github_repository_id':self.registry_id,'branch':'main'}]}
+            return {'type':'file','encoding':'base64','content':base64.b64encode(json.dumps(obj).encode()).decode()}
+
+        if endpoint=='repos/example/data':return {'id':self.source_id,'private':self.private,'permissions':{'pull':self.can_pull,'push':self.can_push}}
         if endpoint=='repos/example/data/commits/main':return {'sha':'a'*40}
         if endpoint=='repos/example/data/contents/.brain-bridge/trust.json?ref='+'a'*40:
             return {'encoding':'base64','type':'file','content':base64.b64encode(json.dumps(self.grants).encode()).decode()}
@@ -69,20 +76,32 @@ class AuthorityTests(unittest.TestCase):
     def test_policy_is_requested_at_exact_authenticated_head(self):
         grant=self.snapshot();self.assertEqual(grant.commit,'a'*40)
         self.assertIn('repos/example/data/contents/.brain-bridge/trust.json?ref='+'a'*40,self.calls)
+    def test_local_proposed_identity_and_registry_are_not_authority(self):
+        original=self.git
+        def no_local_documents(repo,*args):
+            if args[0]=='show':raise AssertionError('Working or branch config must never authorize access')
+            return original(repo,*args)
+        with patch('brain_bridge.authority.git',side_effect=no_local_documents),patch.object(GitHubAuthority,'api',side_effect=self.api):
+            grant=GitHubAuthority().snapshot('code','data')
+        self.assertEqual(grant.identity_key,KEY)
     def test_source_repository_id_mismatch_denied_before_policy_read(self):
         self.registry_id='999'
         with self.assertRaises(AccessDenied):self.snapshot()
-        self.assertFalse(any('/contents/' in call for call in self.calls))
+        self.assertFalse(any(call.startswith('repos/example/data/contents/') for call in self.calls))
     def test_repository_permission_is_required_even_with_policy_grant(self):
         self.can_pull=False
         with self.assertRaises(AccessDenied):self.snapshot()
+    def test_public_destination_cannot_receive_operational_records(self):
+        self.private=False
+        with self.assertRaises(AccessDenied):self.snapshot('write')
+        self.snapshot('read')
     def test_writer_needs_actual_github_push_permission(self):
         self.can_push=False
         with self.assertRaises(AccessDenied):self.snapshot('write')
     def test_fork_mismatch_prevents_policy_read(self):
         self.code_id=999
         with self.assertRaises(AccessDenied):self.snapshot()
-        self.assertEqual(self.calls,['repos/example/code'])
+        self.assertFalse(any(call.startswith('repos/example/data') for call in self.calls))
     def test_revocation_is_refreshed_on_every_request(self):
         self.snapshot();self.grants=policy()
         with self.assertRaises(AccessDenied):self.snapshot()

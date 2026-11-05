@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """Compatibility reads never upgrade or rewrite historical records."""
 import copy,json,unittest
 from pathlib import Path

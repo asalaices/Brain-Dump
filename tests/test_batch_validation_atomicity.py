@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 """Pre-index validation must be atomic across the complete JSON batch."""
 import copy
 import json
