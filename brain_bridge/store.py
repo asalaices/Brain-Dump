@@ -5,6 +5,7 @@ import hashlib
 import os
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from .contract import validate_record, validate_history, record_entries
 
@@ -77,7 +78,7 @@ def rebuild(root,database,contract=None):
     items=list(records(root, contract=contract))
     return rebuild_items(items, database, str(Path(root).resolve(strict=True)))
 
-def rebuild_items(items, database, binding):
+def rebuild_items(items, database, binding, indexed_commit=None):
     # Materialize/flatten before opening SQLite: malformed batches cannot touch
     # an existing index or leave a new empty database behind.
     prepared={f:(h,list(flatten(obj))) for f,h,obj in items}
@@ -100,6 +101,11 @@ def rebuild_items(items, database, binding):
                 conn.executemany("INSERT INTO nodes VALUES (?,?,?,?)",((f,p,k,v) for p,k,v in nodes))
             conn.execute("INSERT OR REPLACE INTO meta VALUES (?,?)",("schema_version",SCHEMA_VERSION))
             conn.execute("INSERT OR REPLACE INTO meta VALUES (?,?)",("source_root",binding))
+            conn.execute("INSERT OR REPLACE INTO meta VALUES (?,?)",("indexed_at",datetime.now(timezone.utc).isoformat()))
+            if indexed_commit is None:
+                conn.execute("DELETE FROM meta WHERE key='indexed_commit'")
+            else:
+                conn.execute("INSERT OR REPLACE INTO meta VALUES (?,?)",("indexed_commit",indexed_commit))
         return len(prepared)
     finally:conn.close()
 
@@ -142,3 +148,18 @@ def sqlite_search(database,term):
                 for f,h,p,k,v in conn.execute("SELECT n.file,f.sha256,n.pointer,n.kind,n.value FROM nodes n JOIN files f ON f.file=n.file ORDER BY n.file,n.rowid")
                 if term.casefold() in v.casefold()]
     finally:conn.close()
+
+
+def cache_metadata(database, binding):
+    """Read diagnostic metadata only; it never grants access or proves freshness."""
+    p=Path(database).expanduser()
+    if not p.is_file() or p.is_symlink(): return {}
+    try:
+        conn=sqlite3.connect(p.resolve().as_uri()+"?mode=ro",uri=True)
+        try:
+            values=dict(conn.execute("SELECT key,value FROM meta"))
+            if values.get("source_root")!=binding or values.get("schema_version")!=SCHEMA_VERSION:
+                return {}
+            return {key:values.get(key) for key in ("indexed_commit","indexed_at")}
+        finally: conn.close()
+    except (OSError,sqlite3.Error): return {}

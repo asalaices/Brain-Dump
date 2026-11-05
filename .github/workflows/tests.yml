@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Package installation
-        run: python -m pip install --disable-pip-version-check --no-deps .
+        run: python -m pip install --disable-pip-version-check .
       - name: Offline tests with zero skips
         shell: python
         run: |

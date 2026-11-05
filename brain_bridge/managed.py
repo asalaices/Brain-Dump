@@ -4,11 +4,12 @@
 import hashlib
 import json
 import subprocess
+import sqlite3
 from pathlib import Path
 from .authority import GitHubAuthority, git
 from .policy import AccessDenied
 from .contract import validate_history, record_entries
-from .store import flatten, rebuild_items, cache_fresh, sqlite_search, unique_object, reject_constant
+from .store import flatten, rebuild_items, cache_fresh, sqlite_search, unique_object, reject_constant, cache_metadata
 
 
 def reader_root(repo, grant):
@@ -107,16 +108,27 @@ def managed_search(identity_repo, source_repo, term, cache_dir, backend="auto", 
     repo = reader_root(source_repo, grant)
     database,binding = cache_path(source_repo,cache_dir,grant)
     items=snapshot_documents(immutable_snapshot(repo,grant))
-    if backend!="json" and cache_fresh(database,binding,{f:h for f,h,_ in items}):
-        results=sqlite_search(database,term)
+    fresh=cache_fresh(database,binding,{f:h for f,h,_ in items})
+    metadata=cache_metadata(database,binding)
+    used="json"
+    results=None
+    if backend!="json" and fresh:
+        try:
+            results=sqlite_search(database,term)
+            used="sqlite"
+        except (OSError,sqlite3.Error):
+            if backend=="sqlite": raise
+            fresh=False
     elif backend=="sqlite":
         raise ValueError("Managed cache missing or stale; run managed-index")
-    else:
+    if results is None:
         results=[dict(file=f,pointer=p,kind=k,value=v,sha256=h) for f,h,obj in items
                  for p,k,v in flatten(obj) if term.casefold() in v.casefold()]
     if api.snapshot(identity_repo, source_repo) != grant:
         raise AccessDenied("Policy/source changed during the read; results withheld")
-    return {"results": results, "source_id": grant.source_id, "commit": grant.commit, "cache_key": grant.cache_key}
+    return {"results": results, "source_id": grant.source_id, "commit": grant.commit, "cache_key": grant.cache_key,
+            "backend_used":used,"source_verified":True,"cache_fresh":fresh,
+            "indexed_commit":metadata.get("indexed_commit"),"indexed_at":metadata.get("indexed_at")}
 
 
 def managed_index(identity_repo, source_repo, cache_dir, authority=None):
@@ -128,10 +140,11 @@ def managed_index(identity_repo, source_repo, cache_dir, authority=None):
     items=snapshot_documents(snapshot)
     if api.snapshot(identity_repo, source_repo) != grant:
         raise AccessDenied("Policy/source changed before indexing")
-    count = rebuild_items(items, database, binding)
+    count = rebuild_items(items, database, binding, indexed_commit=grant.commit)
     if api.snapshot(identity_repo, source_repo) != grant:
         raise AccessDenied("Policy/source changed during indexing; cache must not be served")
-    return {"indexed": count,"indexed_records":len(snapshot["records"]),"indexed_overlays":len(snapshot["overlays"]), "source_id": grant.source_id, "commit": grant.commit, "cache_key": grant.cache_key}
+    return {"indexed": count,"indexed_records":len(snapshot["records"]),"indexed_overlays":len(snapshot["overlays"]), "source_id": grant.source_id, "commit": grant.commit, "cache_key": grant.cache_key,
+            **cache_metadata(database,binding),"cache_fresh":True}
 
 
 def managed_sync(identity_repo, source_repo, cache_dir, authority=None):

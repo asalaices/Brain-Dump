@@ -36,6 +36,51 @@ class ManagedTests(unittest.TestCase):
             before=self.authority.calls
             result=managed_search('code',self.repo,'Synthetic',self.cache,backend,self.authority)
             self.assertTrue(result['results']);self.assertEqual(self.authority.calls,before+2)
+    def test_cache_receipts_distinguish_fallback_and_index_provenance(self):
+        initial=managed_search('code',self.repo,'Synthetic',self.cache,authority=self.authority)
+        self.assertEqual(initial['backend_used'],'json');self.assertFalse(initial['cache_fresh'])
+        self.assertIsNone(initial['indexed_commit']);self.assertIsNone(initial['indexed_at'])
+        indexed=managed_index('code',self.repo,self.cache,self.authority)
+        self.assertEqual(indexed['indexed_commit'],self.grant.commit)
+        self.assertTrue(indexed['indexed_at'])
+        result=managed_search('code',self.repo,'Synthetic',self.cache,authority=self.authority)
+        self.assertEqual(result['backend_used'],'sqlite');self.assertTrue(result['cache_fresh'])
+        self.assertEqual(result['indexed_commit'],indexed['indexed_commit'])
+        # Stable policy namespaces retain the actual indexing commit even when
+        # an unrelated source commit leaves all indexed document hashes intact.
+        from dataclasses import replace
+        self.authority.grant=replace(self.grant,policy_revision='stable-policy')
+        indexed=managed_index('code',self.repo,self.cache,self.authority)
+        (self.repo/'README').write_text('unrelated source documentation')
+        git(self.repo,'add','.');git(self.repo,'commit','-qm','documentation only')
+        self.authority.grant=replace(self.authority.grant,commit=git(self.repo,'rev-parse','HEAD'))
+        result=managed_search('code',self.repo,'Synthetic',self.cache,authority=self.authority)
+        self.assertTrue(result['cache_fresh'])
+        self.assertNotEqual(result['commit'],result['indexed_commit'])
+        self.assertEqual(result['indexed_commit'],indexed['indexed_commit'])
+
+    def test_failed_index_batch_preserves_rows_and_metadata(self):
+        from brain_bridge.managed import cache_path
+        from brain_bridge.store import rebuild_items,cache_metadata
+        managed_index('code',self.repo,self.cache,self.authority)
+        database,binding=cache_path(self.repo,self.cache,self.grant)
+        before=database.read_bytes();metadata=cache_metadata(database,binding)
+        with self.assertRaises(RecursionError):
+            recursive=[];recursive.append(recursive)
+            rebuild_items([('invalid','hash',recursive)],database,binding,indexed_commit='bad')
+        self.assertEqual(database.read_bytes(),before)
+        self.assertEqual(cache_metadata(database,binding),metadata)
+
+    def test_auto_cache_read_failure_falls_back_but_explicit_sqlite_fails(self):
+        import sqlite3
+        managed_index('code',self.repo,self.cache,self.authority)
+        with patch('brain_bridge.managed.sqlite_search',side_effect=sqlite3.DatabaseError('broken')):
+            result=managed_search('code',self.repo,'Synthetic',self.cache,authority=self.authority)
+            self.assertEqual(result['backend_used'],'json');self.assertFalse(result['cache_fresh'])
+            self.assertTrue(result['results'])
+            with self.assertRaises(sqlite3.DatabaseError):
+                managed_search('code',self.repo,'Synthetic',self.cache,'sqlite',self.authority)
+
     def test_ignored_loose_json_cannot_inject_managed_records(self):
         (self.repo/'.gitignore').write_text('records/injected.json\n')
         git(self.repo,'add','.gitignore');git(self.repo,'commit','-qm','ignore synthetic loose fixture')

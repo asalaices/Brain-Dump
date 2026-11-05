@@ -58,3 +58,7 @@ The code and examples now carry the owner's selected AGPL-3.0-only software lice
 ## Private instance configuration
 
 The installed framework package can be public while the selected identity/configuration repository is private. Use a private, separately permissioned instance/configuration repository for nonpublic source inventories, Jenkins endpoints, recipient addresses or tenant identifiers. Do not commit those operational details to the public framework. The identity repository passed to the CLI is the explicitly selected instance: its upstream numeric repository ID and UUID are verified. All deployments require their own reviewed identity/source registration; no shared example UUID or credential is installed automatically.
+
+## Cache status receipts
+
+Managed search reports `backend_used`, `source_verified`, `cache_fresh`, `indexed_commit` and `indexed_at`. Index provenance is committed atomically with the indexed rows. A verified JSON fallback can serve the current source while its derived cache is stale; these are separate states. A matching content cache may remain usable across commits that do not change indexed documents; `commit` names the currently authorized source, while `indexed_commit` retains the actual indexing commit. Missing legacy metadata is reported as null. Metadata never supplies authorization. Offline authorization failure still denies access; no response claims a successful pull merely because local Git objects exist.
