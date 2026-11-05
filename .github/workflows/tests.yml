@@ -31,3 +31,14 @@ jobs:
           sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
       - name: Installed command and license notice
         run: brain-bridge --license
+      - name: Installed shared skill artifact
+        shell: python
+        run: |
+          import json, pathlib, subprocess, sys, tempfile
+          with tempfile.TemporaryDirectory() as directory:
+              result = subprocess.run([sys.executable, '-m', 'brain_bridge', 'skill', '--json'], cwd=directory, capture_output=True, text=True, check=True)
+              receipt = json.loads(result.stdout)
+              skill = pathlib.Path(receipt['path'])
+              assert skill.is_file()
+              assert (skill.parent / 'references' / 'agent-adapters.md').is_file()
+              assert receipt['activates_sources'] is False

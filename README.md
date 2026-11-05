@@ -27,6 +27,8 @@ Current new records use schema v3; explicit history reads preserve v1/v2 bytes.
 adapters and deterministic JSON/DOT/Mermaid evidence graphs. The managed-source
 reference also documents plan-by-default append-only record PRs. No live provider
 or production source is activated by installing the package. The public runtime
-uses the Python standard library and existing external credential transports.
+uses the Python standard library, declared Windows timezone data and existing external credential transports.
 
 [Migration rehearsal](docs/MIGRATION.md) prepares reviewed byte-identical additions into a private destination. It does not activate grants, migrate credentials or switch production routing.
+
+[Cited synapse consultation](docs/SYNAPSE-CONSULT.md) provides `brain-bridge synapse` for an explicitly registered source, with request IDs, immutable record/entry/pointer citations, bounded excerpts and truthful found/no-match/denied/unavailable/error outcomes. The [shared skill](skills/brain-bridge/SKILL.md) and agent discovery pointers use this authorized interface; `brain-bridge skill --json` locates the bundled artifact without installing it globally. Historical records must be separately reviewed upstream before normal clients can consult them.

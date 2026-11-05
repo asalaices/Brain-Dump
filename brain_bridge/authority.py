@@ -14,7 +14,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
-from .policy import Identity, Policy, AccessDenied
+from .policy import Identity, Policy, AccessDenied, AuthorizationUnavailable
 
 
 def git(repo, *args):
@@ -42,6 +42,7 @@ class Grant:
     commit: str
     branch: str
     policy_revision: str = ""
+    source_name: str = ""
 
     @property
     def cache_key(self):
@@ -54,13 +55,13 @@ class GitHubAuthority:
         try:
             result = subprocess.run(["gh", "api", "--hostname", "github.com", endpoint], capture_output=True, timeout=60)
             if result.returncode:
-                raise AccessDenied("Authenticated GitHub metadata could not be refreshed")
+                raise AuthorizationUnavailable("Authenticated GitHub metadata could not be refreshed")
             return json.loads(result.stdout)
         except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-            raise AccessDenied("Authenticated GitHub metadata is unavailable") from exc
+            raise AuthorizationUnavailable("Authenticated GitHub metadata is unavailable") from exc
 
-    def snapshot(self, identity_repo, source_repo, operation="read", branch="main"):
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", branch):
+    def snapshot(self, identity_repo, source_repo, operation="read", branch=None):
+        if branch is not None and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", branch):
             raise AccessDenied("Invalid trusted policy branch")
         identity,code_slug,code_commit=trusted_registration(identity_repo,self)
         source_slug = github_slug(git(source_repo, "remote", "get-url", "origin"))
@@ -82,9 +83,10 @@ class GitHubAuthority:
             sid=repository_id(source["github_repository_id"])
             if sid in identities:raise AccessDenied("Duplicate registered source identity")
             identities.add(sid);names.add(name)
-            if source["github_repository"]==source_slug and source["branch"]==branch:matches.append(source)
+            if source["github_repository"]==source_slug and (branch is None or source["branch"]==branch):matches.append(source)
         if len(matches)!=1:
             raise AccessDenied("Source/branch is not explicitly registered")
+        branch=matches[0]["branch"]
         expected_source_id=matches[0]["github_repository_id"]
         info = self.api("repos/" + source_slug)
         permissions = info.get("permissions", {})
@@ -111,7 +113,7 @@ class GitHubAuthority:
         policy.require(identity, operation)
         if self.api("repos/"+code_slug+"/commits/main").get("sha")!=code_commit:
             raise AccessDenied("Trusted code registration changed during authorization")
-        return Grant(identity.key, str(source_id), source_slug, head, branch, hashlib.sha256(policy_raw).hexdigest())
+        return Grant(identity.key, str(source_id), source_slug, head, branch, hashlib.sha256(policy_raw).hexdigest(), matches[0]["name"])
 
 
 def content_at(api,slug,commit,path):

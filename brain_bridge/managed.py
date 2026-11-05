@@ -5,6 +5,7 @@ import hashlib
 import json
 import subprocess
 import sqlite3
+from collections import Counter
 from pathlib import Path
 from .authority import GitHubAuthority, git
 from .policy import AccessDenied
@@ -124,6 +125,15 @@ def managed_search(identity_repo, source_repo, term, cache_dir, backend="auto", 
     if results is None:
         results=[dict(file=f,pointer=p,kind=k,value=v,sha256=h) for f,h,obj in items
                  for p,k,v in flatten(obj) if term.casefold() in v.casefold()]
+    if used=="sqlite":
+        # A cache is derived and locally mutable. Hashes in its files table
+        # cannot attest that its text rows still match the immutable blobs.
+        canonical=[dict(file=f,pointer=p,kind=k,value=v,sha256=h) for f,h,obj in items
+                   for p,k,v in flatten(obj) if term.casefold() in v.casefold()]
+        fields=('file','pointer','kind','value','sha256')
+        if Counter(tuple(row[key] for key in fields) for row in results)!=Counter(tuple(row[key] for key in fields) for row in canonical):
+            if backend=="sqlite":raise ValueError("Managed cache content differs from canonical JSON; run managed-index")
+            results=canonical;used="json";fresh=False
     if api.snapshot(identity_repo, source_repo) != grant:
         raise AccessDenied("Policy/source changed during the read; results withheld")
     return {"results": results, "source_id": grant.source_id, "commit": grant.commit, "cache_key": grant.cache_key,
