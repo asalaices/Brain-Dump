@@ -1,22 +1,11 @@
-# BD15 guarded Git-to-SQLite sync (development contract)
+# Guarded Git-to-SQLite synchronization
 
-The Git JSON files remain canonical; SQLite is only a derived, per-agent cache. This phase supports an **already-cloned, clean, standalone** repository with an explicitly authorized `origin` URL. No background daemon, credential manager, unattended cloning, or direct-main publisher is included.
-
-Example, using a **private** authorized data checkout:
+Git JSON is canonical; SQLite is an external derived cache. Use [managed source operations](MANAGED-SOURCES.md) when identity/policy enforcement is required. Generic local utilities do not enforce managed grants.
 
 ```sh
-python -m brain_bridge sync \
-  --repo "$HOME/brain-data/Synapses" \
-  --remote "git@github.com:asalaices/Brain-Dump-Synapses.git" \
-  --branch main \
-  --records . \
-  --db "$HOME/.local/state/brain-bridge/synapses.sqlite"
+python3 -m brain_bridge sync --repo /authorized/checkout --remote git@github.com:example/synthetic-data.git --branch main --records records --db /external/cache/index.sqlite --contract history --pretty
 ```
 
-The command rejects a dirty checkout, wrong remote, wrong branch, in-repository SQLite path, and non-fast-forward history; successful sync reports the Git commit, indexed JSON record count, and freshness verification. No `reset --hard`, force update, rebase, or automatic push is used.
+Sync requires an existing clean standalone checkout, exact expected origin, checked-out branch and fast-forward ancestry. Resolved SQLite paths must be outside the checkout, including filesystem aliases. With a contract selected, fetched records are validated before the reader advances. `--contract v3` requires current envelopes; `--contract history` additionally reads frozen v1/v2 without rewriting them.
 
-A Git pull or indexing failure is returned as an error, not a reported successful sync. The existing `search --backend auto` can independently read current local JSON when the SQLite cache is stale or unavailable. Source access is still controlled by Git credentials and filesystem permissions.
-
-**Limitations for follow-up:** The current full hash comparison and full transactional index rebuild are not yet incremental. No structured record schema or signature verification, multi-source manifest, scheduling, cross-process locking, or post-pull audit log is provided. The caller must choose a directory containing only its authorized canonical JSON records; using `--records .` indexes all JSON under that checkout including examples. Do not use against production data until those contracts are reviewed.
-
-Tests use temporary local Git repositories only. No GitHub Actions run is required for local test execution.
+Indexing validates the whole batch first and transactionally changes only changed/deleted records. Index metadata binds the resolved source root. JSON duplicate keys and non-finite numbers are rejected. Missing/stale caches fall back only in auto mode; explicit SQLite mode fails. These utilities do not activate a background scheduler, production credentials, shared database, server-side ACLs or publication.

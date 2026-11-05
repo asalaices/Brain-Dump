@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 import copy
 import json
 import unittest
@@ -16,12 +18,34 @@ class ContractTests(unittest.TestCase):
         self.assertIs(validate_record(self.record, PATH), self.record)
         self.assertEqual(before, self.record)
 
+    def test_evidence_objects_accept_master01_shapes(self):
+        self.record["entry"]["validation"] = {"full_offline": {"passed": 148}}
+        self.record["entry"]["repository_state"] = {"repo": "example/repo", "implementation_merged": True}
+        self.assertIs(validate_record(self.record, PATH), self.record)
+
+    def test_filename_uses_record_timezone_not_timestamp_offset(self):
+        self.record["entry"]["timestamp"] = "2026-11-02T18:00:00+00:00"
+        validate_record(self.record, PATH)
+
+    def test_provenance_collections_and_coverage_are_typed(self):
+        self.record["entry"]["provenance"]["users"] = {}
+        with self.assertRaises(ContractError): validate_record(self.record)
+
+    def test_reject_unsupported_agent_timezone_and_forged_evidence(self):
+        for field,value in [('agent','synthetic-agent'),('agent','unknown')]:
+            invalid=copy.deepcopy(self.record);invalid['entry'][field]=value
+            with self.assertRaises(ContractError):validate_record(invalid)
+        invalid=copy.deepcopy(self.record);invalid['timezone']='UTC'
+        with self.assertRaises(ContractError):validate_record(invalid)
+        invalid=copy.deepcopy(self.record);invalid['entry']['provenance']['repositories']=[{'host':'github.com','full_name':'example/repo','repository_id':'not-a-numeric-id'}]
+        with self.assertRaises(ContractError):validate_record(invalid)
+
     def test_reject_wrong_version(self):
         self.record["schema_version"] = 4
         with self.assertRaises(ContractError): validate_record(self.record)
 
     def test_reject_missing_status(self):
-        del self.record["entry"]["validation"]["publication"]
+        del self.record["entry"]["context"]["coverage_since"]
         with self.assertRaises(ContractError): validate_record(self.record)
 
     def test_reject_mismatched_layout(self):

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Creative Software Development
 import subprocess
 import tempfile
 import unittest
@@ -40,6 +42,26 @@ class SyncTests(unittest.TestCase):
         git("push", cwd=self.writer)
         self.assertEqual(2, self.run_sync()["indexed"])
         self.assertEqual(1, len(search(self.reader / "records", "second", "sqlite", self.db)))
+
+    def test_invalid_fetched_record_does_not_advance_reader_or_cache(self):
+        import json
+        from brain_bridge.contract import ContractError
+        fixture=Path(__file__).resolve().parents[1]/"schemas/record.v3.synthetic.json"
+        doc=json.loads(fixture.read_text())
+        (self.writer/"records"/"one.json").unlink()
+        folder=self.writer/"records"/"2026"/"11";folder.mkdir(parents=True)
+        path=folder/"2026-11-02-12-00-00-11111111-1111-4111-8111-111111111111.json"
+        path.write_text(json.dumps(doc))
+        git("add",".",cwd=self.writer);git("commit","-m","canonical record",cwd=self.writer);git("push",cwd=self.writer)
+        sync(self.reader,str(self.remote),"main","records",self.db,contract="v3")
+        before_head=git("rev-parse","HEAD",cwd=self.reader);before_db=self.db.read_bytes()
+        doc["schema_version"]=4;path.write_text(json.dumps(doc))
+        git("add",".",cwd=self.writer);git("commit","-m","invalid incoming record",cwd=self.writer);git("push",cwd=self.writer)
+        with self.assertRaises(ContractError):
+            sync(self.reader,str(self.remote),"main","records",self.db,contract="v3")
+        self.assertEqual(before_head,git("rev-parse","HEAD",cwd=self.reader))
+        self.assertEqual(before_db,self.db.read_bytes())
+        self.assertFalse(git("status","--porcelain",cwd=self.reader))
 
     def test_dirty_checkout_rejected(self):
         self.run_sync()

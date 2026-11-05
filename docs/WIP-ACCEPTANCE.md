@@ -1,0 +1,13 @@
+# WIP acceptance checkpoint — 2026-11-05
+
+Framework implementation checkpoint: b07a80b8823f2b2f72f29482765c9fb3f8d68fa0, proposed in Brain-Dump PR #8. This receipt records implementation/testing; it is not deployment or cutover approval.
+
+- BD18: immutable source audit accepted 45 historical envelopes, 118 entries and 97 separately hash-bound provenance overlays from frozen source a7fdcd076e4deccab6b57f26102a56d4783264dd. Audit read Git objects in place; no payload was copied into this public repository or rewritten. Strict new v3 and compatible historical v1/v2 parsing are covered by regression tests.
+- BD20: identity initialization is plan-first, persistent/idempotent and checked against authenticated numeric repository identity. Fork mismatch is rejected. Proposed private registration remains unmerged; no active client acceptance is claimed.
+- BD21: POLICY-DECISION.md reconciles the alternative manifests and obsolete mandatory signature/gateway assumptions. Only the implemented default-deny reader/writer contract should proceed to review.
+- BD22: tests cover independent GitHub permission checks, mismatched source/fork identity, malformed and revoked grants, upstream unavailability and refresh during operations. Live client enrollment is still pending separate reviewed registration/grants.
+- BD23: executed synthetic isolation, policy and managed-read tests. They include cross-source cache binding, malformed identities/policies, operation separation, denied GitHub permission, initial denial before cache access, revocation and source changes before returning results. No real credentials or grants are introduced by tests.
+- BD25: transactional validation and compatibility tests pass. PR #8 incorporates the unfinished #4 change; review/merge is outstanding. Do not treat a draft as merged.
+- BD26: source/policy/identity-bound indexing, hash parity, incremental updates and malformed-batch preservation are tested. Receipt fields expose backend_used, source_verified, cache_fresh, indexed_commit and indexed_at; tests distinguish current verified JSON from stale derived cache and preserve actual index provenance across unrelated source commits. Explicit SQLite fails on read errors; auto falls back to verified JSON. Live enrollment/permission-revocation acceptance is still pending.
+
+Validation: 97 local offline tests passed, zero skips; exact six-file staged checker passed. Hosted CI run 41979308565 validates this code checkpoint across Ubuntu/macOS/Windows and Python 3.11/3.14. Consult the run for the final result. This is not a claim that SSO/shared services, operator sign-off, migration rehearsal review or production cutover is complete.
