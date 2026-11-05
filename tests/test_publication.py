@@ -51,13 +51,32 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(self.authority.operations,[])
     def test_execution_pushes_only_one_addition_and_preserves_checkout(self):
         before=(self.repo/'.git/index').read_bytes();result=self.propose(execute=True,yes=True)
-        self.assertEqual(result['status'],'pending_review');self.assertFalse(result['merged'])
+        self.assertEqual(result['status'],'pending_review');self.assertFalse(result['merged']);self.assertTrue(result['remote_verified'])
         self.assertEqual(git(self.repo,'rev-parse','HEAD'),self.base);self.assertFalse(git(self.repo,'status','--porcelain'))
         self.assertEqual(before,(self.repo/'.git/index').read_bytes())
         tip=result['publication_commit'];self.assertEqual(git(self.repo,'diff-tree','--no-commit-id','--name-status','-r',tip),'A\t'+result['path'])
         self.assertEqual(git(self.repo,'rev-parse',tip+'^'),self.base)
         pushed=git(self.repo,'ls-remote','--heads','origin',result['branch']).split()[0]
         self.assertEqual(pushed,tip);self.assertEqual(len(self.reviews.calls),1)
+    def test_different_push_destination_is_rejected_before_push(self):
+        other=self.root/'other.git'
+        subprocess.run(['git','init','--bare',str(other)],check=True,capture_output=True)
+        git(self.repo,'remote','set-url','--push','origin',str(other))
+        with self.assertRaises(AccessDenied):self.propose(execute=True,yes=True)
+        self.assertEqual(self.reviews.calls,[])
+        refs=subprocess.run(['git','-C',str(other),'show-ref','--heads'],capture_output=True)
+        self.assertEqual(refs.returncode,1);self.assertEqual(refs.stdout,b'')
+
+    def test_unverified_remote_never_creates_review(self):
+        from brain_bridge.publication import run_git as actual
+        def transport(repo,*args,**kwargs):
+            if args[0]=='push':return b''  # Transport claims success but stores nothing.
+            return actual(repo,*args,**kwargs)
+        with patch('brain_bridge.publication.run_git',side_effect=transport):
+            with self.assertRaisesRegex(RuntimeError,'tip verification'):
+                self.propose(execute=True,yes=True)
+        self.assertEqual(self.reviews.calls,[])
+
     def test_retry_preserves_same_publication_commit(self):
         first=self.propose(execute=True,yes=True);second=self.propose(execute=True,yes=True)
         self.assertEqual(first['publication_commit'],second['publication_commit'])

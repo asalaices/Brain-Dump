@@ -76,6 +76,28 @@ class GitHubReviews:
         return self.command('pr','create','--repo',repo,'--base',base,'--head',branch,'--title','docs(memory): append '+branch.split('/')[-1],'--body',body)
 
 
+def publication_remote(repo):
+    """Refuse split push destinations before transmitting record bytes."""
+    fetch=run_git(repo,'remote','get-url','--all','origin').decode().splitlines()
+    push=run_git(repo,'remote','get-url','--push','--all','origin').decode().splitlines()
+    if len(fetch)!=1 or push!=fetch:
+        raise AccessDenied('Publication requires one identical fetch/push origin')
+    return fetch[0]
+
+
+def verify_publication(repo,branch,tip,path,raw):
+    """Read back the advertised tip and its exact blob before proposing review."""
+    ref='refs/heads/'+branch
+    advertised=run_git(repo,'ls-remote','--heads','origin',ref).decode().strip()
+    if advertised!=tip+'\t'+ref:
+        raise RuntimeError('Remote publication tip verification failed; branch may remain pending')
+    run_git(repo,'fetch','--no-tags','origin',ref)
+    if run_git(repo,'rev-parse','FETCH_HEAD').decode().strip()!=tip:
+        raise RuntimeError('Remote publication changed during verification')
+    if run_git(repo,'show',tip+':'+path)!=raw:
+        raise RuntimeError('Remote publication bytes verification failed')
+
+
 def propose_record(identity_repo,source_repo,input_path,execute=False,yes=False,authority=None,reviews=None):
     if execute and not yes:raise ValueError('Publication execution requires --yes')
     obj,raw,relative=candidate(input_path)
@@ -97,6 +119,7 @@ def propose_record(identity_repo,source_repo,input_path,execute=False,yes=False,
     branch='brain-bridge/'+entry['id']
     receipt={'status':'plan','path':path,'sha256':digest,'base_commit':read.commit,'branch':branch,'source_id':read.source_id}
     if not execute:return receipt
+    remote_url=publication_remote(repo)
     if api.snapshot(identity_repo,source_repo,'write')!=write:raise AccessDenied('Trusted policy changed before publication')
     remote=run_git(repo,'ls-remote','--heads','origin',branch).decode().strip()
     if remote:
@@ -115,7 +138,11 @@ def propose_record(identity_repo,source_repo,input_path,execute=False,yes=False,
             tree=run_git(repo,'write-tree',env=environment).decode().strip()
             tip=run_git(repo,'commit-tree',tree,'-p',read.commit,data=('docs(memory): append '+entry['id']+'\n').encode()).decode().strip()
         if api.snapshot(identity_repo,source_repo,'write')!=write:raise AccessDenied('Trusted policy changed before push')
+        if publication_remote(repo)!=remote_url:raise AccessDenied('Publication origin changed')
         run_git(repo,'push','origin',tip+':refs/heads/'+branch)
+    if publication_remote(repo)!=remote_url:raise AccessDenied('Publication origin changed')
+    verify_publication(repo,branch,tip,path,raw)
+    if api.snapshot(identity_repo,source_repo,'write')!=write:raise AccessDenied('Policy changed after remote verification')
     review=reviews or GitHubReviews()
     url=review.propose(read.source_slug,branch,tip,path,digest,read.branch)
-    return {**receipt,'status':'pending_review','publication_commit':tip,'pull_request':url,'merged':False}
+    return {**receipt,'status':'pending_review','publication_commit':tip,'pull_request':url,'merged':False,'remote_verified':True}
