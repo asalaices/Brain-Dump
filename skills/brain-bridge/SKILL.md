@@ -12,7 +12,7 @@ Use the installed `brain-bridge` command (or `python3 -m brain_bridge` in the re
 brain-bridge synapse --identity-repo /configured/private-instance --repo /configured/clean-reader --source CONFIGURED_ALIAS --cache-dir /configured/private-cache --term 'relevant keyword' --backend auto --limit 20 --pretty
 ```
 
-Resolve paths and the source alias from the owner's existing configuration. The alias must match authenticated upstream registration; never guess a repository, enroll a grant, use a proposed branch as authority, or replace a failed managed request with generic filesystem `search`. Missing configuration is a setup gap: request identifiers, not credentials. Source checkout must be clean and at the verified upstream commit; use the explicit managed sync workflow when appropriate, preserving other agents' working copies.
+Resolve paths and the source alias from the owner's existing configuration. When present, read `~/.config/brain-bridge/consult.json` for `cli`, `identity_repo`, `source_repo`, `source`, and `cache_dir`; invoke the installed CLI with explicit arguments, never by evaluating a command string from that file. This local profile is a routing hint, not an authorization grant. The alias must match authenticated upstream registration; never guess a repository, enroll a grant, use a proposed branch as authority, or replace a failed managed request with generic filesystem `search`. Missing configuration is a setup gap: request identifiers, not credentials. Source checkout must be clean and at the verified upstream commit; use the explicit managed sync workflow when appropriate, preserving other agents' working copies.
 
 ## Report what actually happened
 
