@@ -4,8 +4,22 @@ import os
 import json
 import sqlite3
 from pathlib import Path
+from .contract import validate_record, validate_history, record_entries
 
-SCHEMA_VERSION = '2'
+SCHEMA_VERSION = '3'
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def reject_constant(value):
+    raise ValueError("Non-finite JSON numbers are not canonical")
+
 
 def flatten(obj, path=""):
     if isinstance(obj, dict):
@@ -19,14 +33,26 @@ def flatten(obj, path=""):
     else:
         yield path,"value",json.dumps(obj,ensure_ascii=False) if isinstance(obj,(bool,type(None))) else str(obj)
 
-def records(root):
+def records(root, contract=None):
     base=Path(root).resolve(strict=True)
     if not base.is_dir(): raise ValueError("root must be a directory")
+    seen_ids = set()
     for p in sorted(base.rglob("*.json")):
         if p.is_symlink() or not p.is_file() or not p.resolve().is_relative_to(base): continue
         raw=p.read_bytes()
         if len(raw)>1048576: raise ValueError("oversized JSON record")
-        yield p.relative_to(base).as_posix(),hashlib.sha256(raw).hexdigest(),json.loads(raw)
+        rel = p.relative_to(base).as_posix()
+        obj = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant)
+        if contract in ("v3", "history"):
+            validator=validate_record if contract=="v3" else validate_history
+            validator(obj, rel if rel.startswith("Brain-Bridge/") else "Brain-Bridge/" + rel)
+            for entry in record_entries(obj):
+                uid=entry["id"]
+                if uid in seen_ids:raise ValueError("Duplicate immutable entry ID")
+                seen_ids.add(uid)
+        elif contract is not None:
+            raise ValueError("Unsupported JSON contract")
+        yield rel,hashlib.sha256(raw).hexdigest(),obj
 
 def json_search(root,term):
     if not term: raise ValueError("term required")
@@ -42,25 +68,45 @@ def connect(database):
     conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     conn.execute("CREATE TABLE IF NOT EXISTS files (file TEXT PRIMARY KEY, sha256 TEXT NOT NULL)")
     conn.execute("CREATE TABLE IF NOT EXISTS nodes (file TEXT,pointer TEXT,kind TEXT,value TEXT)")
+    conn.execute("CREATE INDEX IF NOT EXISTS nodes_by_file ON nodes(file)")
     return conn
 
-def rebuild(root,database):
-    items=list(records(root))
+def rebuild(root,database,contract=None):
+    items=list(records(root, contract=contract))
+    return rebuild_items(items, database, str(Path(root).resolve(strict=True)))
+
+def rebuild_items(items, database, binding):
+    # Materialize/flatten before opening SQLite: malformed batches cannot touch
+    # an existing index or leave a new empty database behind.
+    prepared={f:(h,list(flatten(obj))) for f,h,obj in items}
     conn=connect(database)
     try:
+        conn.execute("BEGIN IMMEDIATE")
+        old_binding=conn.execute("SELECT value FROM meta WHERE key='source_root'").fetchone()
+        old_version=conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        previous=dict(conn.execute("SELECT file,sha256 FROM files"))
+        reusable=old_binding==(binding,) and old_version==(SCHEMA_VERSION,)
+        changed={f for f,(digest,_) in prepared.items() if not reusable or previous.get(f)!=digest}
+        removed=set(previous)-set(prepared)
         with conn:
-            conn.execute("DELETE FROM nodes")
-            conn.execute("DELETE FROM files")
+            for f in removed|changed:
+                conn.execute("DELETE FROM nodes WHERE file=?",(f,))
+                conn.execute("DELETE FROM files WHERE file=?",(f,))
+            for f in changed:
+                digest,nodes=prepared[f]
+                conn.execute("INSERT INTO files VALUES (?,?)",(f,digest))
+                conn.executemany("INSERT INTO nodes VALUES (?,?,?,?)",((f,p,k,v) for p,k,v in nodes))
             conn.execute("INSERT OR REPLACE INTO meta VALUES (?,?)",("schema_version",SCHEMA_VERSION))
-            for f,h,obj in items:
-                conn.execute("INSERT INTO files VALUES (?,?)",(f,h))
-                conn.executemany("INSERT INTO nodes VALUES (?,?,?,?)",((f,p,k,v) for p,k,v in flatten(obj)))
-        return len(items)
-    finally: conn.close()
+            conn.execute("INSERT OR REPLACE INTO meta VALUES (?,?)",("source_root",binding))
+        return len(prepared)
+    finally:conn.close()
 
 def is_fresh(root,database):
     """Validate every source hash and the index schema before trusting a cache."""
     current={f:h for f,h,_ in records(root)}
+    return cache_fresh(database, str(Path(root).resolve(strict=True)), current)
+
+def cache_fresh(database, binding, current):
     p=Path(database).expanduser()
     if not p.is_file() or p.is_symlink(): return False
     try:
@@ -68,7 +114,8 @@ def is_fresh(root,database):
         try:
             version=conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
             indexed=dict(conn.execute("SELECT file,sha256 FROM files"))
-            return version==(SCHEMA_VERSION,) and indexed==current
+            bound=conn.execute("SELECT value FROM meta WHERE key='source_root'").fetchone()
+            return version==(SCHEMA_VERSION,) and bound==(binding,) and indexed==current
         finally: conn.close()
     except (OSError,sqlite3.Error): return False
 

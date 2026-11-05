@@ -6,3 +6,7 @@
 __pycache__/
 .env
 records/private/
+
+*.egg-info/
+build/
+dist/
