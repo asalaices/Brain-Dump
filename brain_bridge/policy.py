@@ -15,6 +15,11 @@ class AccessDenied(PermissionError):
     pass
 
 
+class AuthorizationUnavailable(AccessDenied):
+    """Current upstream authorization cannot be established."""
+    pass
+
+
 def document(raw):
     try:
         obj = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant)

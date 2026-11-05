@@ -51,28 +51,35 @@ class PolicyTests(unittest.TestCase):
 
 class AuthorityTests(unittest.TestCase):
     def setUp(self):
-        self.code_id=123;self.source_id=456;self.can_pull=True;self.can_push=True;self.grants=policy([KEY],[KEY]);self.calls=[];self.registry_id="456";self.private=True
+        self.code_id=123;self.source_id=456;self.can_pull=True;self.can_push=True;self.grants=policy([KEY],[KEY]);self.calls=[];self.registry_id="456";self.private=True;self.registry_branch="main"
     def api(self,endpoint):
         self.calls.append(endpoint)
         if endpoint=='repos/example/code':return {'id':self.code_id}
         if endpoint=='repos/example/code/commits/main':return {'sha':'c'*40}
         if endpoint.startswith('repos/example/code/contents/'):
-            obj=IDENTITY if '/identity.json?' in endpoint else {'schema_version':1,'sources':[{'name':'synthetic','github_repository':'example/data','github_repository_id':self.registry_id,'branch':'main'}]}
+            obj=IDENTITY if '/identity.json?' in endpoint else {'schema_version':1,'sources':[{'name':'synthetic','github_repository':'example/data','github_repository_id':self.registry_id,'branch':self.registry_branch}]}
             return {'type':'file','encoding':'base64','content':base64.b64encode(json.dumps(obj).encode()).decode()}
 
         if endpoint=='repos/example/data':return {'id':self.source_id,'private':self.private,'permissions':{'pull':self.can_pull,'push':self.can_push}}
-        if endpoint=='repos/example/data/commits/main':return {'sha':'a'*40}
+        if endpoint=='repos/example/data/commits/'+self.registry_branch:return {'sha':'a'*40}
         if endpoint=='repos/example/data/contents/.brain-bridge/trust.json?ref='+'a'*40:
             return {'encoding':'base64','type':'file','content':base64.b64encode(json.dumps(self.grants).encode()).decode()}
         raise AssertionError(endpoint)
     def git(self,repo,*args):
         if args==('remote','get-url','origin'):return 'git@github.com:example/'+('code' if str(repo)=='code' else 'data')+'.git'
         if args==('show','HEAD:.brain-bridge/identity.json'):return json.dumps(IDENTITY)
-        if args==('show','HEAD:.brain-bridge/sources.json'):return json.dumps({'schema_version':1,'sources':[{'name':'synthetic','github_repository':'example/data','github_repository_id':self.registry_id,'branch':'main'}]})
+        if args==('show','HEAD:.brain-bridge/sources.json'):return json.dumps({'schema_version':1,'sources':[{'name':'synthetic','github_repository':'example/data','github_repository_id':self.registry_id,'branch':self.registry_branch}]})
         raise AssertionError(args)
     def snapshot(self,operation='read'):
         with patch('brain_bridge.authority.git',side_effect=self.git),patch.object(GitHubAuthority,'api',side_effect=self.api):
             return GitHubAuthority().snapshot('code','data',operation)
+    def test_registered_source_branch_is_used_without_assuming_main(self):
+        self.registry_branch='release'
+        grant=self.snapshot()
+        self.assertEqual(grant.branch,'release');self.assertEqual(grant.source_name,'synthetic')
+        self.assertIn('repos/example/data/commits/release',self.calls)
+        self.assertNotIn('repos/example/data/commits/main',self.calls)
+
     def test_policy_is_requested_at_exact_authenticated_head(self):
         grant=self.snapshot();self.assertEqual(grant.commit,'a'*40)
         self.assertIn('repos/example/data/contents/.brain-bridge/trust.json?ref='+'a'*40,self.calls)

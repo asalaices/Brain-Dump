@@ -4,22 +4,27 @@
 import argparse
 import json
 import sys
+import sqlite3
+import subprocess
 from .store import rebuild, search
 from .sync import sync
 from .authority import initialize_identity
 from .publication import propose_record
 from .connectors import observe_named
 from .github import collect_named
+from .synapse import synapse_request
+from .skill import bundled_skill
 from .migration import plan_migration,apply_migration
 from .managed import managed_search, managed_index, managed_sync, managed_graph
 
-VERSION = '0.2.0'
+VERSION = '0.3.0'
 
 def parser():
     cli=argparse.ArgumentParser(description=__doc__)
     cli.add_argument('--version',action='version',version='brain-bridge '+VERSION)
     cli.add_argument('--license',action='version',help='Show copyright, license and warranty notice',version='Copyright (C) 2026 Creative Software Development. AGPL-3.0-only; no warranty. See LICENSE and NOTICE, https://www.gnu.org/licenses/agpl-3.0.html')
     sub=cli.add_subparsers(dest='action',required=True)
+    sub.add_parser('skill',help='Locate and read the bundled consult skill; never install globally or grant access')
     s=sub.add_parser('search',help='Local authorized JSON utility; no managed access enforcement')
     s.add_argument('--root',required=True);s.add_argument('--term',required=True)
     s.add_argument('--backend',choices=['json','sqlite','auto'],default='auto');s.add_argument('--db')
@@ -35,6 +40,11 @@ def parser():
         command.add_argument('--identity-repo',required=True);command.add_argument('--repo',required=True);command.add_argument('--cache-dir',required=True)
         if name=='managed-search':
             command.add_argument('--term',required=True);command.add_argument('--backend',choices=['json','sqlite','auto'],default='auto')
+    consult=sub.add_parser('synapse',help='Consult a named authorized Brain source and return bounded cited references')
+    consult.add_argument('--identity-repo',required=True);consult.add_argument('--repo',required=True)
+    consult.add_argument('--source',required=True);consult.add_argument('--term',required=True);consult.add_argument('--cache-dir',required=True)
+    consult.add_argument('--backend',choices=['json','sqlite','auto'],default='auto')
+    consult.add_argument('--limit',type=int,default=20);consult.add_argument('--excerpt-chars',type=int,default=240)
     migration=sub.add_parser('migrate-plan',help='Inventory a private byte-preserving rehearsal; never switch production')
     migration.add_argument('--source-repo',required=True);migration.add_argument('--destination-repo',required=True);migration.add_argument('--source-id',required=True);migration.add_argument('--destination-id',required=True)
     migration.add_argument('--source-ref',default='main');migration.add_argument('--destination-ref',default='main');migration.add_argument('--namespace',choices=['Brain-Bridge','records'],default='Brain-Bridge')
@@ -59,7 +69,9 @@ def parser():
 def main(argv=None):
     args=parser().parse_args(argv)
     try:
-        if args.action=='migrate-plan':result={'plan':plan_migration(args.source_repo,args.destination_repo,args.source_id,args.destination_id,args.source_ref,args.destination_ref,args.namespace)}
+        if args.action=='skill':result=bundled_skill()
+        elif args.action=='synapse':result=synapse_request(args.identity_repo,args.repo,args.source,args.term,args.cache_dir,args.backend,args.limit,args.excerpt_chars)
+        elif args.action=='migrate-plan':result={'plan':plan_migration(args.source_repo,args.destination_repo,args.source_id,args.destination_id,args.source_ref,args.destination_ref,args.namespace)}
         elif args.action=='migrate-apply':
             with open(args.plan) as file:plan=json.load(file)
             result=apply_migration(args.source_repo,args.destination_repo,plan,args.execute,args.yes)
@@ -75,8 +87,8 @@ def main(argv=None):
         elif args.action=='sync':result=sync(args.repo,args.remote,args.branch,args.records,args.db,args.contract)
         else:result={'results':search(args.root,args.term,args.backend,args.db)}
         result['info']={'script':'brain_bridge','script_version':VERSION,'license':'AGPL-3.0-only','copyright':'2026 Creative Software Development'}
-        print(json.dumps(result,ensure_ascii=False,indent=2 if args.pretty else None));return 0
-    except (ValueError,RuntimeError,OSError) as exc:
-        print(json.dumps({'error':str(exc),'info':{'script':'brain_bridge','script_version':VERSION,'license':'AGPL-3.0-only','copyright':'2026 Creative Software Development'}}));return 1
+        print(json.dumps(result,ensure_ascii=False,indent=2 if args.pretty else None));return 1 if args.action=='synapse' and result['status'] not in ('found','no_match') else 0
+    except (ValueError,RuntimeError,OSError,sqlite3.Error,subprocess.TimeoutExpired) as exc:
+        print(json.dumps({'error':'Operation timed out; no result reported' if isinstance(exc,subprocess.TimeoutExpired) else str(exc),'info':{'script':'brain_bridge','script_version':VERSION,'license':'AGPL-3.0-only','copyright':'2026 Creative Software Development'}}));return 1
 
 if __name__=='__main__':raise SystemExit(main())

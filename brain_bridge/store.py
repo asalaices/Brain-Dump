@@ -90,7 +90,11 @@ def rebuild_items(items, database, binding, indexed_commit=None):
         previous=dict(conn.execute("SELECT file,sha256 FROM files"))
         reusable=old_binding==(binding,) and old_version==(SCHEMA_VERSION,)
         changed={f for f,(digest,_) in prepared.items() if not reusable or previous.get(f)!=digest}
-        removed=set(previous)-set(prepared)
+        indexed_nodes={}
+        for file,pointer,kind,value in conn.execute("SELECT file,pointer,kind,value FROM nodes ORDER BY rowid"):
+            indexed_nodes.setdefault(file,[]).append((pointer,kind,value))
+        changed.update(file for file,(_,nodes) in prepared.items() if indexed_nodes.get(file,[])!=nodes)
+        removed=(set(previous)|set(indexed_nodes))-set(prepared)
         with conn:
             for f in removed|changed:
                 conn.execute("DELETE FROM nodes WHERE file=?",(f,))
@@ -144,9 +148,12 @@ def sqlite_search(database,term):
     if not p.is_file() or p.is_symlink(): raise FileNotFoundError("index missing")
     conn=sqlite3.connect(p.resolve().as_uri()+"?mode=ro",uri=True)
     try:
-        return [dict(file=f,pointer=p,kind=k,value=v,sha256=h)
-                for f,h,p,k,v in conn.execute("SELECT n.file,f.sha256,n.pointer,n.kind,n.value FROM nodes n JOIN files f ON f.file=n.file ORDER BY n.file,n.rowid")
-                if term.casefold() in v.casefold()]
+        results=[]
+        for f,h,p,k,v in conn.execute("SELECT n.file,f.sha256,n.pointer,n.kind,n.value FROM nodes n JOIN files f ON f.file=n.file ORDER BY n.file,n.rowid"):
+            if not all(isinstance(value,str) for value in (f,h,p,k,v)):
+                raise sqlite3.DatabaseError("Index contains invalid row types")
+            if term.casefold() in v.casefold():results.append(dict(file=f,pointer=p,kind=k,value=v,sha256=h))
+        return results
     finally:conn.close()
 
 
