@@ -7,3 +7,8 @@ The canonical instructions are SKILL.md and the bounded `brain-bridge synapse` i
 - Claude: the repository CLAUDE.md points to the same skill. For another repository, add an equivalent reviewed project pointer when requested.
 
 All three resolve owner-configured instance, clean reader, source alias and private cache, then run the same CLI and report the same receipt fields. The shared skill remains the source of truth; adapters do not contain operational identities, credentials, extra grants or a second trust contract. `brain-bridge skill --json` locates and reads the bundled skill in an installed package; it does not install it globally or edit another project.
+
+For Git-owned discovery, follow [the package installer](../README.md). Its thin
+wrapper requires an explicit existing installer checkout and preserves all
+conflicting discovery paths. The bundled wheel artifact remains readable through
+`brain-bridge skill --json`; it does not become a discovery source automatically.
