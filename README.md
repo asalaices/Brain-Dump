@@ -8,6 +8,13 @@ Track implementation in [BD program #272](https://github.com/asalaices/master-01
 
 Software is licensed under **AGPL-3.0-only**. Copyright (C) 2026 **Creative Software Development**. Preserve the applicable original-author, copyright and license notices; see [LICENSE](LICENSE) and [NOTICE](NOTICE). Private operational records and credentials are separate from the software license.
 
+## Production delivery roadmap
+
+The [BDT roadmap](docs/roadmap/README.md) covers direct Git bots, continuous local
+cache sync, shared query service, local/remote MCP, end-to-end bootstrap (binaries,
+services, optional tunnels and client settings), web UI and production acceptance.
+These are planned deliverables; current capabilities are described below.
+
 ## Current implementation
 
 The full enterprise roadmap remains the target; this is a development foundation.
