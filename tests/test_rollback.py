@@ -9,7 +9,7 @@ from unittest.mock import patch
 from brain_bridge.managed import immutable_snapshot
 from brain_bridge.policy import AccessDenied
 from brain_bridge.rollback import plan_rollback_audit
-from tests import test_migration as fixtures
+import test_migration as fixtures
 git = fixtures.git
 
 

@@ -7,7 +7,7 @@ import unittest
 from brain_bridge.authority import Grant
 from brain_bridge.contract import validate_record
 from brain_bridge.managed import immutable_snapshot
-from tests import test_migration as fixtures
+import test_migration as fixtures
 
 
 class HistoryCompatibilityTests(unittest.TestCase):
