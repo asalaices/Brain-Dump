@@ -53,9 +53,9 @@ def history_compatibility(repo, commit):
     from .contract import FILE_PATTERN
     rules = {}
     for rule in doc['records']:
-        if not isinstance(rule, dict) or set(rule) != {'path', 'sha256', 'kind'} or not isinstance(rule['path'], str) or not FILE_PATTERN.fullmatch(rule['path']) or not isinstance(rule['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', rule['sha256']) or rule['kind'] != 'legacy_github_issue_shape' or rule['path'] in rules:
+        if not isinstance(rule, dict) or set(rule) != {'path', 'sha256', 'kind'} or not isinstance(rule['path'], str) or not FILE_PATTERN.fullmatch(rule['path']) or not isinstance(rule['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', rule['sha256']) or rule['kind'] not in ('legacy_github_issue_shape', 'legacy_analysis_object') or rule['path'] in rules:
             raise ValueError('Invalid history compatibility pin')
-        rules[rule['path']] = rule['sha256']
+        rules[rule['path']] = {'sha256': rule['sha256'], 'kind': rule['kind']}
     return rules
 
 
@@ -80,10 +80,12 @@ def immutable_snapshot(repo, grant,records_prefix="records"):
         obj=json.loads(raw,object_pairs_hook=unique_object,parse_constant=reject_constant)
         relative=name.removeprefix(records_prefix+"/")
         logical = "Brain-Bridge/"+relative
-        historical = logical in compatibility
-        if historical and hashlib.sha256(raw).hexdigest() != compatibility[logical]:
+        pin = compatibility.get(logical)
+        if pin and hashlib.sha256(raw).hexdigest() != pin['sha256']:
             raise ValueError('Historical compatibility hash mismatch')
-        validate_history(obj,logical,legacy_github_issue_shape=historical)
+        validate_history(obj, logical,
+                         legacy_github_issue_shape=bool(pin and pin['kind'] == 'legacy_github_issue_shape'),
+                         legacy_analysis_object=bool(pin and pin['kind'] == 'legacy_analysis_object'))
         for entry in record_entries(obj):
             uid=entry["id"]
             if uid in seen:raise ValueError("Duplicate immutable entry ID")

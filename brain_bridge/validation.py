@@ -8,6 +8,7 @@ from .contract import validate_record
 from .managed import immutable_snapshot, object_bytes
 from .publication import SECRET, validate_anchor
 from .store import unique_object, reject_constant
+from .historical_import import authorized_batch, import_controls, proposal_changes
 
 
 def _files(repo, commit):
@@ -41,6 +42,14 @@ def validate_source(repo, base_ref, ref='HEAD'):
         if after.get(name) != value:
             raise ValueError('Committed ledger files may not change, move or disappear')
     additions = sorted(after.keys() - before.keys())
+    controls_before, controls_after = import_controls(repo, base), import_controls(repo, head)
+    for path in controls_before:
+        if object_bytes(repo, 'ls-tree', base, '--', path) != object_bytes(repo, 'ls-tree', head, '--', path):
+            raise ValueError('Reviewed import authorizations may not change or disappear')
+    if set(controls_after) - set(controls_before) and additions:
+        raise ValueError('Historical import authorization must be reviewed before its payload PR')
+    proposal_changes(repo, base, head, before, controls_before, controls_after, _files)
+    approved = authorized_batch(repo, base, head, before, after, _files)
     new_records = 0
     grant = Grant('local-ci-validation', 'local', 'local/source', base, 'main')
     for name in additions:
@@ -54,14 +63,17 @@ def validate_source(repo, base_ref, ref='HEAD'):
             raise ValueError('Potential credential material in ledger addition')
         obj = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant)
         if name.startswith('records/'):
-            validate_record(obj, 'Brain-Bridge/' + name.removeprefix('records/'))
-            validate_anchor(repo, grant, obj['entry'])
+            if approved is None:
+                validate_record(obj, 'Brain-Bridge/' + name.removeprefix('records/'))
+                validate_anchor(repo, grant, obj['entry'])
             new_records += 1
     # Whole-history validation catches duplicate IDs and malformed/hash-unbound
-    # metadata. Compatibility pins never exempt a new record from v3 validation.
+    # metadata. Only a complete BASE-approved import may bypass strict new writes.
     for commit in (base, head):
         snapshot = immutable_snapshot(repo, Grant('local-ci-validation', 'local', 'local/source', commit, 'main'))
     return {'valid': True, 'base_commit': base, 'commit': head,
             'new_records': new_records, 'new_overlays': len(additions) - new_records,
             'record_count': len(snapshot['records']), 'history_unchanged': True,
-            'executed': False}
+            'executed': False, 'historical_import': approved is not None,
+            'import_manifest_token': approved['manifest_token'] if approved else None,
+            'source_authentication': 'operator-planner-before-review' if approved else None}

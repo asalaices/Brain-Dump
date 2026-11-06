@@ -56,10 +56,12 @@ def validate_anchor(repo, grant, entry):
     from .store import unique_object, reject_constant
     obj=json.loads(raw,object_pairs_hook=unique_object,parse_constant=reject_constant)
     pins=history_compatibility(repo,grant.commit)
-    pinned=anchor['ledger'] in pins
-    if pinned and hashlib.sha256(raw).hexdigest()!=pins[anchor['ledger']]:
+    pin=pins.get(anchor['ledger'])
+    if pin and hashlib.sha256(raw).hexdigest()!=pin['sha256']:
         raise ValueError('Coverage baseline compatibility hash mismatch')
-    validate_history(obj,anchor['ledger'],legacy_github_issue_shape=pinned)
+    validate_history(obj, anchor['ledger'],
+                     legacy_github_issue_shape=bool(pin and pin['kind']=='legacy_github_issue_shape'),
+                     legacy_analysis_object=bool(pin and pin['kind']=='legacy_analysis_object'))
     if not any(e['id']==anchor['entry_id'] and e['timestamp']==anchor['timestamp'] for e in record_entries(obj)):
         raise ValueError('Coverage baseline does not match the published record')
 

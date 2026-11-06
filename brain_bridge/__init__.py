@@ -1,3 +1,3 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 Creative Software Development
-__version__ = "0.6.1"
+__version__ = "0.7.0"

@@ -67,3 +67,22 @@ class SourceValidationTests(unittest.TestCase):
         path.write_text(json.dumps(doc)); self.commit()
         with self.assertRaisesRegex(ValueError, '^Potential credential material in ledger addition$'):
             validate_source(self.repo, self.base)
+
+    def test_analysis_pin_cannot_self_authorize_a_new_write(self):
+        path = self.append(); doc = json.loads(path.read_text())
+        doc['entry']['analysis'] = {'summary': 'Not a canonical new-write array'}
+        path.write_text(json.dumps(doc))
+        config = self.repo / '.brain-bridge/history-compatibility.json'
+        config.parent.mkdir()
+        config.write_text(json.dumps({'schema_version': 1, 'records': [{
+            'path': 'Brain-Bridge/' + path.relative_to(self.repo / 'records').as_posix(),
+            'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'kind': 'legacy_analysis_object'}]}))
+        self.commit()
+        with self.assertRaises(ValueError): validate_source(self.repo, self.base)
+
+    def test_overflowing_raw_addition_fails_shared_strict_contract(self):
+        path = self.append(); doc = json.loads(path.read_text())
+        doc['entry']['analysis'] = [float('inf')]
+        path.write_text(json.dumps(doc).replace('Infinity', '1e999')); self.commit()
+        with self.assertRaisesRegex(ValueError, 'finite JSON'):
+            validate_source(self.repo, self.base)

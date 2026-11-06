@@ -92,3 +92,10 @@ compatibility pins. A pin cannot exempt a newly added record from strict v3.
 This is a local CI utility, not managed access authorization. It never writes
 files, grants access, pushes or merges. Initial historical imports and catch-up
 migrations need their own separately reviewed acceptance process.
+
+### Reviewed historical catch-up
+
+The read-only [`import-plan` workflow](docs/HISTORICAL-IMPORTS.md) proposes an
+authenticated exact-byte historical batch for separate destination review.
+`validate-source` accepts only the complete batch authorized in immutable BASE;
+normal new writes remain strict. Planning does not copy, grant, push or cut over.

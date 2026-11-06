@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from uuid import UUID
 import re
 import copy
+import json
 
 ENTRY_FIELDS = {
     "id": str, "timestamp": str, "agent": str, "entry_type": str,
@@ -28,6 +29,10 @@ class ContractError(ValueError):
     pass
 
 def validate_record(record, path=None):
+    try:
+        json.dumps(record, allow_nan=False)
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise ContractError('Record must contain finite JSON values') from exc
     if not isinstance(record, dict) or set(record) != {"schema_version", "date", "timezone", "entry"}:
         raise ContractError("Expected v3 envelope: schema_version, date, timezone, entry")
     if type(record["schema_version"]) is not int or record["schema_version"] != 3:
@@ -97,16 +102,24 @@ def validate_record(record, path=None):
     return record
 
 
-def validate_history(record, path=None, *, legacy_github_issue_shape=False):
+def validate_history(record, path=None, *, legacy_github_issue_shape=False, legacy_analysis_object=False):
     """Read historical v1/v2 without rewriting; new publication remains v3-only."""
     if not isinstance(record, dict) or type(record.get('schema_version')) is not int:
         raise ContractError('Invalid historical envelope')
     version=record['schema_version']
+    if (legacy_github_issue_shape or legacy_analysis_object) and version != 3:
+        raise ContractError('Historical shape pins apply only to schema 3')
     if version==3:
         candidate = record
-        if legacy_github_issue_shape:
+        if legacy_github_issue_shape or legacy_analysis_object:
             candidate = copy.deepcopy(record)
-            provenance = candidate.get('entry', {}).get('provenance', {})
+        entry = candidate.get('entry')
+        if legacy_analysis_object and isinstance(entry, dict):
+            if not isinstance(entry.get('analysis'), dict):
+                raise ContractError('Analysis compatibility requires a historical object')
+            entry['analysis'] = [entry['analysis']]
+        if legacy_github_issue_shape and isinstance(entry, dict):
+            provenance = entry.get('provenance', {})
             if isinstance(provenance, dict) and isinstance(provenance.get('issues'), list):
                 for issue in provenance['issues']:
                     if isinstance(issue, dict) and issue.get('provider', 'github') == 'github':
