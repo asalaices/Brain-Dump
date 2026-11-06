@@ -107,17 +107,18 @@ def propose_record(identity_repo,source_repo,input_path,execute=False,yes=False,
     if read!=write:raise AccessDenied('Read/write policy changed during publication planning')
     repo=reader_root(source_repo,read)
     path='records/'+relative;digest=hashlib.sha256(raw).hexdigest();entry=obj['entry']
+    identity={'entry_id':entry['id'],'source_id':read.source_id,'source':read.source_name,'path':path,'sha256':digest}
     items=immutable_records(repo,read)
     for name,existing_digest,existing in items:
         if name==relative:
             if existing_digest!=digest:raise ValueError('Immutable record path already exists with different bytes')
             if api.snapshot(identity_repo,source_repo,'write')!=write:raise AccessDenied('Policy changed')
-            return {'status':'published','already_published':True,'path':path,'sha256':digest,'commit':read.commit}
+            return {**identity,'status':'published','already_published':True,'published':True,'canonical_verified':True,'commit':read.commit}
         if any(e['id']==entry['id'] for e in record_entries(existing)):
             raise ValueError('Immutable entry ID already exists at another path')
     validate_anchor(repo,read,entry)
     branch='brain-bridge/'+entry['id']
-    receipt={'status':'plan','path':path,'sha256':digest,'base_commit':read.commit,'branch':branch,'source_id':read.source_id}
+    receipt={**identity,'status':'plan','base_commit':read.commit,'branch':branch,'published':False,'canonical_verified':False,'remote_verified':False}
     if not execute:return receipt
     remote_url=publication_remote(repo)
     if api.snapshot(identity_repo,source_repo,'write')!=write:raise AccessDenied('Trusted policy changed before publication')

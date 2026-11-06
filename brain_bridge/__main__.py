@@ -16,9 +16,10 @@ from .synapse import synapse_request
 from .skill import bundled_skill
 from .migration import plan_migration,apply_migration
 from .rollback import plan_rollback_audit
+from .validation import validate_source
 from .managed import managed_search, managed_index, managed_sync, managed_graph
 
-VERSION = '0.4.0'
+VERSION = '0.5.0'
 
 def parser():
     cli=argparse.ArgumentParser(description=__doc__)
@@ -26,6 +27,8 @@ def parser():
     cli.add_argument('--license',action='version',help='Show copyright, license and warranty notice',version='Copyright (C) 2026 Creative Software Development. AGPL-3.0-only; no warranty. See LICENSE and NOTICE, https://www.gnu.org/licenses/agpl-3.0.html')
     sub=cli.add_subparsers(dest='action',required=True)
     sub.add_parser('skill',help='Locate and read the bundled consult skill; never install globally or grant access')
+    validation=sub.add_parser('validate-source',help='Local CI: require strict v3 additions and immutable published ledger bytes')
+    validation.add_argument('--repo',required=True);validation.add_argument('--base-ref',required=True);validation.add_argument('--ref',default='HEAD')
     s=sub.add_parser('search',help='Local authorized JSON utility; no managed access enforcement')
     s.add_argument('--root',required=True);s.add_argument('--term',required=True)
     s.add_argument('--backend',choices=['json','sqlite','auto'],default='auto');s.add_argument('--db')
@@ -64,7 +67,8 @@ def parser():
     collection.add_argument('--id',required=True);collection.add_argument('--include-body',action='store_true',help='Explicitly include untrusted issue/PR body or commit message')
     publication=sub.add_parser('publish',help='Plan an append-only private-source record PR; never merge or push main')
     publication.add_argument('--identity-repo',required=True);publication.add_argument('--repo',required=True);publication.add_argument('--record',required=True)
-    publication.add_argument('--execute',action='store_true');publication.add_argument('--yes',action='store_true')
+    publication.add_argument('--execute','--push',dest='execute',action='store_true',help='Push one verified immutable record branch and propose a PR; requires --yes, never merges')
+    publication.add_argument('--yes',action='store_true')
     for command in sub.choices.values():
         command.add_argument('--json',action='store_true',help='Emit JSON (the default)')
         command.add_argument('--pretty',action='store_true',help='Indent the same JSON document')
@@ -74,6 +78,7 @@ def main(argv=None):
     args=parser().parse_args(argv)
     try:
         if args.action=='skill':result=bundled_skill()
+        elif args.action=='validate-source':result=validate_source(args.repo,args.base_ref,args.ref)
         elif args.action=='synapse':result=synapse_request(args.identity_repo,args.repo,args.source,args.term,args.cache_dir,args.backend,args.limit,args.excerpt_chars)
         elif args.action=='rollback-audit':result=plan_rollback_audit(args.source_repo,args.destination_repo,args.source_id,args.destination_id,args.source_ref,args.destination_ref)
         elif args.action=='migrate-plan':result={'plan':plan_migration(args.source_repo,args.destination_repo,args.source_id,args.destination_id,args.source_ref,args.destination_ref,args.namespace)}

@@ -56,3 +56,30 @@ symlinks, duplicate keys and unknown descriptor fields are rejected or ignored
 as appropriate to committed snapshot reads. Migration does not automatically
 copy this policy: destination compatibility requires its own review before
 historical data is accepted. Local loose-file index utilities remain strict.
+
+### Publication receipts
+
+`publish` plans by default. `publish --push --yes` (also spelled
+`--execute --yes`) pushes one immutable record branch and proposes a PR after
+independent grants, remote SHA and raw-byte verification. It never merges.
+A `pending_review` receipt has `published: false`, `canonical_verified: false`,
+and `remote_verified: true`: verified branch bytes are still awaiting review.
+After separately authorized integration and managed synchronization, retrying
+the same record returns `published: true` and `canonical_verified: true` only
+when its exact path and hash exist at the authenticated canonical commit.
+The receipt includes entry ID and source identity. It does not infer a specific
+PR merge from canonical bytes. Keep the original record and ID for every retry.
+Live writer acceptance requires its own reviewed grant; a reader grant alone
+is insufficient.
+
+### Destination CI
+
+`brain-bridge validate-source --repo CHECKOUT --base-ref REVIEWED_BASE_SHA`
+checks committed Git objects only. Existing files in `records/` and `metadata/`
+keep their exact paths, modes and bytes; new records require strict v3, unique
+IDs, a published ancestor coverage anchor, and credential-marker screening.
+Whole-history validation binds provenance overlays and explicit historical
+compatibility pins. A pin cannot exempt a newly added record from strict v3.
+This is a local CI utility, not managed access authorization. It never writes
+files, grants access, pushes or merges. Initial historical imports and catch-up
+migrations need their own separately reviewed acceptance process.

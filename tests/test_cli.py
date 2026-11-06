@@ -7,6 +7,7 @@ import io
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from brain_bridge.__main__ import main
 
@@ -30,6 +31,14 @@ class CLITests(unittest.TestCase):
                 with contextlib.redirect_stdout(output):code=main(['search','--root',t,'--term','needle',flag])
                 self.assertEqual(code,0);documents.append(json.loads(output.getvalue()))
             self.assertEqual(documents[0],documents[1]);self.assertTrue(documents[0]['info']['script_version'])
+    def test_publish_push_alias_matches_execute_and_defaults_to_plan(self):
+        base = ['publish','--identity-repo','identity','--repo','source','--record','candidate.json']
+        for flags, expected in (([],False),(['--push'],True),(['--execute'],True)):
+            with self.subTest(flags=flags), patch('brain_bridge.__main__.propose_record',return_value={'status':'plan'}) as publish:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(main(base+flags+['--yes']),0)
+                publish.assert_called_once_with('identity','source','candidate.json',expected,True)
+
     def test_failure_is_one_json_document(self):
         output=io.StringIO()
         with contextlib.redirect_stdout(output):code=main(['search','--root','/does-not-exist/synthetic','--term','x','--json'])
