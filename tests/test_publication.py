@@ -58,6 +58,27 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(git(self.repo,'rev-parse',tip+'^'),self.base)
         pushed=git(self.repo,'ls-remote','--heads','origin',result['branch']).split()[0]
         self.assertEqual(pushed,tip);self.assertEqual(len(self.reviews.calls),1)
+    def test_receipts_distinguish_pending_branch_from_canonical_publication(self):
+        plan=self.propose()
+        self.assertFalse(plan['published']);self.assertFalse(plan['canonical_verified']);self.assertFalse(plan['remote_verified'])
+        pending=self.propose(execute=True,yes=True)
+        self.assertEqual(pending['entry_id'],self.doc['entry']['id'])
+        self.assertEqual(pending['source_id'],self.authority.grant.source_id)
+        self.assertFalse(pending['published']);self.assertFalse(pending['canonical_verified'])
+        self.assertTrue(pending['remote_verified'])
+        git(self.remote,'update-ref','refs/heads/main',pending['publication_commit'],self.base)
+        git(self.repo,'merge','--ff-only',pending['publication_commit'])
+        from dataclasses import replace
+        self.authority.grant=replace(self.authority.grant,commit=pending['publication_commit'])
+        count=len(self.reviews.calls)
+        published=self.propose(execute=True,yes=True)
+        self.assertEqual(published['status'],'published');self.assertTrue(published['published'])
+        self.assertTrue(published['canonical_verified']);self.assertTrue(published['already_published'])
+        self.assertEqual(published['commit'],pending['publication_commit'])
+        self.assertEqual(published['sha256'],pending['sha256'])
+        self.assertEqual(len(self.reviews.calls),count)
+        self.assertNotIn('merged',published,'Canonical bytes do not prove a particular PR was merged')
+
     def test_different_push_destination_is_rejected_before_push(self):
         other=self.root/'other.git'
         subprocess.run(['git','init','--bare',str(other)],check=True,capture_output=True)

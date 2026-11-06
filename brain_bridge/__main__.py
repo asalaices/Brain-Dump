@@ -18,7 +18,7 @@ from .migration import plan_migration,apply_migration
 from .rollback import plan_rollback_audit
 from .managed import managed_search, managed_index, managed_sync, managed_graph
 
-VERSION = '0.4.0'
+VERSION = '0.4.1'
 
 def parser():
     cli=argparse.ArgumentParser(description=__doc__)
@@ -64,7 +64,8 @@ def parser():
     collection.add_argument('--id',required=True);collection.add_argument('--include-body',action='store_true',help='Explicitly include untrusted issue/PR body or commit message')
     publication=sub.add_parser('publish',help='Plan an append-only private-source record PR; never merge or push main')
     publication.add_argument('--identity-repo',required=True);publication.add_argument('--repo',required=True);publication.add_argument('--record',required=True)
-    publication.add_argument('--execute',action='store_true');publication.add_argument('--yes',action='store_true')
+    publication.add_argument('--execute','--push',dest='execute',action='store_true',help='Push one verified immutable record branch and propose a PR; requires --yes, never merges')
+    publication.add_argument('--yes',action='store_true')
     for command in sub.choices.values():
         command.add_argument('--json',action='store_true',help='Emit JSON (the default)')
         command.add_argument('--pretty',action='store_true',help='Indent the same JSON document')
