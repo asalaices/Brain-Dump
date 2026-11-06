@@ -55,6 +55,16 @@ class CLITests(unittest.TestCase):
                     adapter.assert_called_once_with(*expected);documents.append(json.loads(output.getvalue()))
             self.assertEqual(documents[0],documents[1])
 
+    def test_import_plan_is_read_only_and_dispatches_explicit_identities(self):
+        base = ['import-plan', '--source-repo', 'source', '--destination-repo', 'destination',
+                '--source-id', '11', '--destination-id', '22']
+        for flag in ('--json', '--pretty'):
+            with self.subTest(flag=flag), patch('brain_bridge.__main__.plan_import', return_value={'read_only': True, 'executed': False}) as plan:
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output): self.assertEqual(main(base + [flag]), 0)
+                plan.assert_called_once_with('source', 'destination', '11', '22', 'main', 'main', 'Brain-Bridge')
+                self.assertFalse(json.loads(output.getvalue())['executed'])
+
     def test_failure_is_one_json_document(self):
         output=io.StringIO()
         with contextlib.redirect_stdout(output):code=main(['search','--root','/does-not-exist/synthetic','--term','x','--json'])

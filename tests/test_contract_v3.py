@@ -40,6 +40,14 @@ class ContractTests(unittest.TestCase):
         invalid=copy.deepcopy(self.record);invalid['entry']['provenance']['repositories']=[{'host':'github.com','full_name':'example/repo','repository_id':'not-a-numeric-id'}]
         with self.assertRaises(ContractError):validate_record(invalid)
 
+    def test_nonfinite_and_non_json_values_are_rejected_without_rewriting(self):
+        for value in (float('inf'), float('-inf'), float('nan'), object()):
+            with self.subTest(kind=type(value).__name__):
+                self.record['entry']['analysis'] = [value]
+                with self.assertRaisesRegex(ContractError, 'finite JSON'):
+                    validate_record(self.record)
+                self.assertIs(self.record['entry']['analysis'][0], value)
+
     def test_reject_wrong_version(self):
         self.record["schema_version"] = 4
         with self.assertRaises(ContractError): validate_record(self.record)

@@ -119,6 +119,12 @@ class PublicationTests(unittest.TestCase):
         self.doc['entry']['analysis']=['-----BEGIN '+'PRIVATE KEY-----'];self.input.write_text(json.dumps(self.doc))
         with self.assertRaises(ValueError):self.propose()
         self.assertEqual(self.authority.operations,[])
+    def test_overflowing_raw_json_rejected_before_authentication(self):
+        self.doc['entry']['analysis'] = [float('inf')]
+        self.input.write_text(json.dumps(self.doc).replace('Infinity', '1e999'))
+        with self.assertRaisesRegex(ValueError, 'finite JSON'): self.propose()
+        self.assertEqual(self.authority.operations, [])
+
     def test_existing_open_review_is_reused(self):
         client=GitHubReviews()
         with patch.object(client,'command',return_value=json.dumps([{'url':'https://github.com/example/private-data/pull/1','headRefOid':'a'*40,'state':'OPEN'}])) as command:
