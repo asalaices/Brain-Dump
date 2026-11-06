@@ -17,6 +17,7 @@ from .skill import bundled_skill
 from .adapters import managed_create, managed_export, managed_latest, managed_status
 from .migration import plan_migration,apply_migration
 from .historical_import import plan_import
+from .reconciliation import poll_reconciliation
 from .rollback import plan_rollback_audit
 from .validation import validate_source
 from .managed import managed_search, managed_index, managed_sync, managed_graph
@@ -68,6 +69,17 @@ def parser():
     historical.add_argument('--source-id',required=True);historical.add_argument('--destination-id',required=True)
     historical.add_argument('--source-ref',default='main');historical.add_argument('--destination-ref',default='main')
     historical.add_argument('--namespace',choices=['Brain-Bridge','records'],default='Brain-Bridge')
+    reconciliation=sub.add_parser('reconcile',help='Observe historical catch-up; one-shot JSON or bounded JSONL polling, never copy or authorize')
+    for name in ('source-repo','destination-repo','source-id','destination-id'):
+        reconciliation.add_argument('--'+name,required=True)
+    reconciliation.add_argument('--source-ref',default='main');reconciliation.add_argument('--destination-ref',default='main')
+    reconciliation.add_argument('--namespace',choices=['Brain-Bridge','records'],default='Brain-Bridge')
+    reconciliation.add_argument('--state-dir',help='Optional external private metadata checkpoint; no source record content')
+    reconciliation.add_argument('--execute',action='store_true',help='Write checkpoint metadata only; requires --state-dir and --yes')
+    reconciliation.add_argument('--yes',action='store_true')
+    reconciliation.add_argument('--refresh',action='store_true',help='Explicitly fetch/validate/fast-forward the two selected clean readers; requires --execute --yes and --state-dir')
+    reconciliation.add_argument('--cycles',type=int,default=1,help='1–1000 cycles; more than1 explicitly emits JSONL')
+    reconciliation.add_argument('--interval',type=float,default=60,help='Polling interval seconds, default60; no scheduler is installed')
     audit=sub.add_parser('rollback-audit',help='Read immutable rollback evidence; never change routing or grants')
     for name in ('source-repo','destination-repo','source-id','destination-id','source-ref','destination-ref'):
         audit.add_argument('--'+name,required=True)
@@ -90,9 +102,21 @@ def parser():
         command.add_argument('--pretty',action='store_true',help='Indent the same JSON document')
     return cli
 
+def runtime_info():
+    return {'script':'brain_bridge','script_version':VERSION,'license':'AGPL-3.0-only','copyright':'2026 Creative Software Development'}
+
 def main(argv=None):
-    args=parser().parse_args(argv)
+    cli=parser();args=cli.parse_args(argv)
+    if args.action=='reconcile' and args.cycles != 1 and args.pretty:
+        cli.error('--pretty is supported only for one-shot reconciliation; polling emits JSONL')
     try:
+        if args.action=='reconcile':
+            for receipt in poll_reconciliation(args.source_repo,args.destination_repo,args.source_id,args.destination_id,
+                    args.source_ref,args.destination_ref,args.namespace,args.state_dir,args.execute,args.yes,
+                    cycles=args.cycles,interval=args.interval,refresh=args.refresh):
+                receipt['info']=runtime_info()
+                print(json.dumps(receipt,ensure_ascii=False,indent=2 if args.pretty else None),flush=True)
+            return 0
         if args.action=='skill':result=bundled_skill()
         elif args.action=='validate-source':result=validate_source(args.repo,args.base_ref,args.ref)
         elif args.action=='create':result=managed_create(args.identity_repo,args.repo,args.source,args.entry,args.output,args.execute,args.yes)
@@ -117,9 +141,9 @@ def main(argv=None):
         elif args.action=='index':result={'indexed':rebuild(args.root,args.db,args.contract)}
         elif args.action=='sync':result=sync(args.repo,args.remote,args.branch,args.records,args.db,args.contract)
         else:result={'results':search(args.root,args.term,args.backend,args.db)}
-        result['info']={'script':'brain_bridge','script_version':VERSION,'license':'AGPL-3.0-only','copyright':'2026 Creative Software Development'}
+        result['info']=runtime_info()
         print(json.dumps(result,ensure_ascii=False,indent=2 if args.pretty else None));return 1 if args.action=='synapse' and result['status'] not in ('found','no_match') else 0
     except (ValueError,RuntimeError,OSError,sqlite3.Error,subprocess.TimeoutExpired) as exc:
-        print(json.dumps({'error':'Operation timed out; no result reported' if isinstance(exc,subprocess.TimeoutExpired) else str(exc),'info':{'script':'brain_bridge','script_version':VERSION,'license':'AGPL-3.0-only','copyright':'2026 Creative Software Development'}}));return 1
+        print(json.dumps({'error':'Operation timed out; no result reported' if isinstance(exc,subprocess.TimeoutExpired) else str(exc),'info':runtime_info()}));return 1
 
 if __name__=='__main__':raise SystemExit(main())

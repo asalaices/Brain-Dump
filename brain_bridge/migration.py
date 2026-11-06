@@ -28,7 +28,8 @@ def reference(value):
     return value
 
 
-def repo_facts(repo,expected_id,ref,api,write=False):
+def repo_metadata(repo,expected_id,ref,api,write=False):
+    """Authenticate a published target without assuming its objects are local."""
     repo=Path(repo).resolve(strict=True);expected_id=repository_id(expected_id);ref=reference(ref)
     if Path(git(repo,'rev-parse','--show-toplevel')).resolve()!=repo:raise ValueError('Migration path must be a checkout root')
     slug=github_slug(git(repo,'remote','get-url','origin'));info=api.api('repos/'+slug)
@@ -38,8 +39,14 @@ def repo_facts(repo,expected_id,ref,api,write=False):
     if write and info.get('private') is not True:raise AccessDenied('Migration destination must be private')
     head=api.api('repos/'+slug+'/commits/'+quote(ref,safe='')).get('sha')
     if not isinstance(head,str) or not re.fullmatch(r'[0-9a-f]{40}',head):raise AccessDenied('Published migration snapshot unavailable')
-    if object_bytes(repo,'cat-file','-t',head).strip()!=b'commit':raise ValueError('Fetch the published snapshot before planning')
     return {'repository':slug,'repository_id':expected_id,'ref':ref,'commit':head},info
+
+
+def repo_facts(repo,expected_id,ref,api,write=False):
+    """Default planning still requires the authenticated commit to be local."""
+    facts,info=repo_metadata(repo,expected_id,ref,api,write)
+    if object_bytes(repo,'cat-file','-t',facts['commit']).strip()!=b'commit':raise ValueError('Fetch the published snapshot before planning')
+    return facts,info
 
 
 def audience(api,slug,info):
@@ -72,6 +79,16 @@ def audience(api,slug,info):
     return {'owner_id':str(owner['id']),'users':sorted(users),'teams':sorted(teams),'deploy_key_fingerprints':sorted(keys),'application_grants':'requires_owner_review_before_cutover'}
 
 
+def audience_expansion(source_info,source_audience,destination_audience):
+    expansion=[]
+    if source_info.get('private') is not False:
+        if source_audience['owner_id']!=destination_audience['owner_id']:expansion.append('different_repository_owner')
+        expansion += ['user:'+uid for uid in set(destination_audience['users'])-set(source_audience['users'])]
+        expansion += ['team:'+uid for uid in set(destination_audience['teams'])-set(source_audience['teams'])]
+        expansion += ['deploy_key:'+key for key in set(destination_audience['deploy_key_fingerprints'])-set(source_audience['deploy_key_fingerprints'])]
+    return sorted(expansion)
+
+
 def plan_migration(source_repo,destination_repo,source_id,destination_id,source_ref='main',destination_ref='main',namespace='Brain-Bridge',authority=None,allow_partial=False):
     if namespace not in ('Brain-Bridge','records'):raise ValueError('Unsupported migration namespace')
     api=authority or GitHubAuthority()
@@ -81,12 +98,7 @@ def plan_migration(source_repo,destination_repo,source_id,destination_id,source_
     if git(destination_repo,'rev-parse','HEAD')!=destination['commit']:raise ValueError('Destination checkout must match the reviewed published base')
     if not allow_partial and git(destination_repo,'status','--porcelain','--untracked-files=all'):raise ValueError('Destination checkout is dirty')
     source_audience=audience(api,source['repository'],source_info);destination_audience=audience(api,destination['repository'],destination_info)
-    expansion=[]
-    if source_info.get('private') is not False:
-        if source_audience['owner_id']!=destination_audience['owner_id']:expansion.append('different_repository_owner')
-        expansion += ['user:'+uid for uid in set(destination_audience['users'])-set(source_audience['users'])]
-        expansion += ['team:'+uid for uid in set(destination_audience['teams'])-set(source_audience['teams'])]
-        expansion += ['deploy_key:'+key for key in set(destination_audience['deploy_key_fingerprints'])-set(source_audience['deploy_key_fingerprints'])]
+    expansion=audience_expansion(source_info,source_audience,destination_audience)
     source_snapshot=immutable_snapshot(source_repo,Grant('migration-operator',source_id,source['repository'],source['commit'],source_ref),records_prefix=namespace)
     target_snapshot=immutable_snapshot(destination_repo,Grant('migration-operator',destination_id,destination['repository'],destination['commit'],destination_ref))
     existing={('records/'+name):sha for name,sha,_ in target_snapshot['records']};existing.update({name:sha for name,sha,_ in target_snapshot['overlays']})
