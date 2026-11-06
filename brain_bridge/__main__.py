@@ -14,12 +14,13 @@ from .connectors import observe_named
 from .github import collect_named
 from .synapse import synapse_request
 from .skill import bundled_skill
+from .adapters import managed_create, managed_export, managed_latest, managed_status
 from .migration import plan_migration,apply_migration
 from .rollback import plan_rollback_audit
 from .validation import validate_source
 from .managed import managed_search, managed_index, managed_sync, managed_graph
 
-VERSION = '0.5.0'
+from . import __version__ as VERSION
 
 def parser():
     cli=argparse.ArgumentParser(description=__doc__)
@@ -44,6 +45,15 @@ def parser():
         command.add_argument('--identity-repo',required=True);command.add_argument('--repo',required=True);command.add_argument('--cache-dir',required=True)
         if name=='managed-search':
             command.add_argument('--term',required=True);command.add_argument('--backend',choices=['json','sqlite','auto'],default='auto')
+    for name in ('create', 'latest', 'export', 'status'):
+        adapter=sub.add_parser(name,help='Named-source managed '+name+' adapter; never switch production or merge')
+        adapter.add_argument('--identity-repo',required=True);adapter.add_argument('--repo',required=True)
+        adapter.add_argument('--source',required=True)
+        if name=='create':
+            adapter.add_argument('--entry',required=True,help='Complete authored entry JSON with stable UUIDv4 and timestamp')
+            adapter.add_argument('--output',required=True,help='Draft file outside identity/source checkouts; never overwritten')
+            adapter.add_argument('--execute',action='store_true');adapter.add_argument('--yes',action='store_true')
+        elif name=='status':adapter.add_argument('--cache-dir',required=True)
     consult=sub.add_parser('synapse',help='Consult a named authorized Brain source and return bounded cited references')
     consult.add_argument('--identity-repo',required=True);consult.add_argument('--repo',required=True)
     consult.add_argument('--source',required=True);consult.add_argument('--term',required=True);consult.add_argument('--cache-dir',required=True)
@@ -79,6 +89,10 @@ def main(argv=None):
     try:
         if args.action=='skill':result=bundled_skill()
         elif args.action=='validate-source':result=validate_source(args.repo,args.base_ref,args.ref)
+        elif args.action=='create':result=managed_create(args.identity_repo,args.repo,args.source,args.entry,args.output,args.execute,args.yes)
+        elif args.action=='export':result=managed_export(args.identity_repo,args.repo,args.source)
+        elif args.action=='latest':result=managed_latest(args.identity_repo,args.repo,args.source)
+        elif args.action=='status':result=managed_status(args.identity_repo,args.repo,args.source,args.cache_dir)
         elif args.action=='synapse':result=synapse_request(args.identity_repo,args.repo,args.source,args.term,args.cache_dir,args.backend,args.limit,args.excerpt_chars)
         elif args.action=='rollback-audit':result=plan_rollback_audit(args.source_repo,args.destination_repo,args.source_id,args.destination_id,args.source_ref,args.destination_ref)
         elif args.action=='migrate-plan':result={'plan':plan_migration(args.source_repo,args.destination_repo,args.source_id,args.destination_id,args.source_ref,args.destination_ref,args.namespace)}

@@ -18,7 +18,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 from .authority import GitHubAuthority
 from .contract import validate_record, validate_history, record_entries
-from .managed import reader_root, immutable_records
+from .managed import reader_root, immutable_records, history_compatibility
 from .policy import AccessDenied
 
 SECRET = re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bgh[oprsu]_[A-Za-z0-9_]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b|\bAKIA[0-9A-Z]{16}\b')
@@ -55,7 +55,11 @@ def validate_anchor(repo, grant, entry):
     if len(raw)>1048576:raise ValueError('Oversized baseline record')
     from .store import unique_object, reject_constant
     obj=json.loads(raw,object_pairs_hook=unique_object,parse_constant=reject_constant)
-    validate_history(obj,anchor['ledger'])
+    pins=history_compatibility(repo,grant.commit)
+    pinned=anchor['ledger'] in pins
+    if pinned and hashlib.sha256(raw).hexdigest()!=pins[anchor['ledger']]:
+        raise ValueError('Coverage baseline compatibility hash mismatch')
+    validate_history(obj,anchor['ledger'],legacy_github_issue_shape=pinned)
     if not any(e['id']==anchor['entry_id'] and e['timestamp']==anchor['timestamp'] for e in record_entries(obj)):
         raise ValueError('Coverage baseline does not match the published record')
 

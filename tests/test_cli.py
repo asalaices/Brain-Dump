@@ -39,6 +39,22 @@ class CLITests(unittest.TestCase):
                     self.assertEqual(main(base+flags+['--yes']),0)
                 publish.assert_called_once_with('identity','source','candidate.json',expected,True)
 
+    def test_managed_adapter_cli_dispatch_and_json_pretty_parity(self):
+        base=['--identity-repo','identity','--repo','source','--source','primary']
+        for action, function, extra, expected in [
+            ('export','managed_export',[],('identity','source','primary')),
+            ('latest','managed_latest',[],('identity','source','primary')),
+            ('status','managed_status',['--cache-dir','cache'],('identity','source','primary','cache')),
+            ('create','managed_create',['--entry','entry.json','--output','draft.json'],
+             ('identity','source','primary','entry.json','draft.json',False,False))]:
+            documents=[]
+            for flag in ['--json','--pretty']:
+                with self.subTest(action=action,flag=flag), patch('brain_bridge.__main__.'+function,return_value={'status':'synthetic'}) as adapter:
+                    output=io.StringIO()
+                    with contextlib.redirect_stdout(output):self.assertEqual(main([action]+base+extra+[flag]),0)
+                    adapter.assert_called_once_with(*expected);documents.append(json.loads(output.getvalue()))
+            self.assertEqual(documents[0],documents[1])
+
     def test_failure_is_one_json_document(self):
         output=io.StringIO()
         with contextlib.redirect_stdout(output):code=main(['search','--root','/does-not-exist/synthetic','--term','x','--json'])

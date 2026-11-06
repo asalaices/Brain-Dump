@@ -57,6 +57,15 @@ as appropriate to committed snapshot reads. Migration does not automatically
 copy this policy: destination compatibility requires its own review before
 historical data is accepted. Local loose-file index utilities remain strict.
 
+### Everyday managed commands
+
+Version 0.6 adds named-source `create`, `latest`, `export` and `status` adapters.
+They preserve the private-source authorization boundary and never switch
+production routing. `create` plans an external draft from a complete authored
+entry; `--execute --yes` writes it without overwriting another file. Publishing
+that draft remains a separate PR-only command. See
+[managed adapter contracts](docs/MANAGED-ADAPTERS.md) for exact outputs and retries.
+
 ### Publication receipts
 
 `publish` plans by default. `publish --push --yes` (also spelled
