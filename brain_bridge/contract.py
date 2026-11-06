@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from uuid import UUID
 import re
+import copy
 
 ENTRY_FIELDS = {
     "id": str, "timestamp": str, "agent": str, "entry_type": str,
@@ -96,13 +97,25 @@ def validate_record(record, path=None):
     return record
 
 
-def validate_history(record, path=None):
+def validate_history(record, path=None, *, legacy_github_issue_shape=False):
     """Read historical v1/v2 without rewriting; new publication remains v3-only."""
     if not isinstance(record, dict) or type(record.get('schema_version')) is not int:
         raise ContractError('Invalid historical envelope')
     version=record['schema_version']
     if version==3:
-        return validate_record(record,path)
+        candidate = record
+        if legacy_github_issue_shape:
+            candidate = copy.deepcopy(record)
+            provenance = candidate.get('entry', {}).get('provenance', {})
+            if isinstance(provenance, dict) and isinstance(provenance.get('issues'), list):
+                for issue in provenance['issues']:
+                    if isinstance(issue, dict) and issue.get('provider', 'github') == 'github':
+                        if type(issue.get('number')) is int and issue['number'] > 0:
+                            issue['number'] = str(issue['number'])
+                        if 'relationship' not in issue:
+                            issue['relationship'] = 'unrecorded'
+        validate_record(candidate,path)
+        return record
     if version not in (1,2):
         raise ContractError('Unsupported historical schema')
     try:

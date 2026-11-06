@@ -32,3 +32,27 @@ uses the Python standard library, declared Windows timezone data and existing ex
 [Migration rehearsal](docs/MIGRATION.md) prepares reviewed byte-identical additions into a private destination. It does not activate grants, migrate credentials or switch production routing.
 
 [Cited synapse consultation](docs/SYNAPSE-CONSULT.md) provides `brain-bridge synapse` for an explicitly registered source, with request IDs, immutable record/entry/pointer citations, bounded excerpts and truthful found/no-match/denied/unavailable/error outcomes. The [shared skill](skills/brain-bridge/SKILL.md) and agent discovery pointers use this authorized interface; `brain-bridge skill --json` locates the bundled artifact without installing it globally. Historical records must be separately reviewed upstream before normal clients can consult them.
+
+### Rollback evidence and immutable history
+
+`brain-bridge rollback-audit` accepts explicit `--source-repo`,
+`--destination-repo`, `--source-id`, `--destination-id`, `--source-ref`, and
+`--destination-ref`. It authenticates the published repository identities,
+permissions and audiences, compares legacy `Brain-Bridge/` with destination
+`records/` and provenance metadata, then rechecks those observations. Its JSON
+report identifies destination-only IDs, divergent content and metadata changes.
+It never changes routing, grants, files, branches or production state; even
+identical snapshots require writer quiescence, routing review and operator
+acceptance. Keep operational reports within the repositories' authorized audience.
+
+Managed historical reads can use a separately reviewed, committed
+`.brain-bridge/history-compatibility.json` descriptor. Schema version 1 contains
+`records`, each with a logical dated `Brain-Bridge/...json` path, exact raw
+`sha256`, and kind `legacy_github_issue_shape`. This narrowly permits positive
+numeric GitHub issue numbers and missing relationship fields during validation
+of those exact historical bytes. Returned records retain their original fields;
+new publication remains strict. Loose configuration files, mismatched hashes,
+symlinks, duplicate keys and unknown descriptor fields are rejected or ignored
+as appropriate to committed snapshot reads. Migration does not automatically
+copy this policy: destination compatibility requires its own review before
+historical data is accepted. Local loose-file index utilities remain strict.

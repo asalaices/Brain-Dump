@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Creative Software Development
 """Managed reads use authenticated immutable Git objects, never loose JSON."""
 import hashlib
+import re
 import json
 import subprocess
 import sqlite3
@@ -31,12 +32,40 @@ def object_bytes(repo, *args):
     return result.stdout
 
 
+def history_compatibility(repo, commit):
+    """Load explicit read-only pins from this same immutable snapshot."""
+    path = '.brain-bridge/history-compatibility.json'
+    parent = object_bytes(repo, 'ls-tree', commit, '--', '.brain-bridge')
+    if parent and parent.split()[0] != b'040000':
+        raise ValueError('History configuration namespace must be a directory')
+    row = object_bytes(repo, 'ls-tree', commit, '--', path)
+    if not row:
+        return {}
+    mode, kind, oid = row.split(b'\t', 1)[0].decode().split()
+    if mode not in ('100644', '100755') or kind != 'blob':
+        raise ValueError('History configuration must be a regular Git blob')
+    if int(object_bytes(repo, 'cat-file', '-s', oid)) > 65536:
+        raise ValueError('Oversized history configuration')
+    doc = json.loads(object_bytes(repo, 'cat-file', 'blob', oid),
+                     object_pairs_hook=unique_object, parse_constant=reject_constant)
+    if not isinstance(doc, dict) or set(doc) != {'schema_version', 'records'} or type(doc['schema_version']) is not int or doc['schema_version'] != 1 or not isinstance(doc['records'], list):
+        raise ValueError('Invalid history configuration')
+    from .contract import FILE_PATTERN
+    rules = {}
+    for rule in doc['records']:
+        if not isinstance(rule, dict) or set(rule) != {'path', 'sha256', 'kind'} or not isinstance(rule['path'], str) or not FILE_PATTERN.fullmatch(rule['path']) or not isinstance(rule['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', rule['sha256']) or rule['kind'] != 'legacy_github_issue_shape' or rule['path'] in rules:
+            raise ValueError('Invalid history compatibility pin')
+        rules[rule['path']] = rule['sha256']
+    return rules
+
+
 def immutable_snapshot(repo, grant,records_prefix="records"):
     if records_prefix not in ("records","Brain-Bridge"):raise ValueError("Unsupported canonical namespace")
     metadata_prefix="metadata" if records_prefix=="records" else "Brain-Bridge/metadata"
     if object_bytes(repo,"cat-file","-t",grant.commit+":"+records_prefix).strip()!=b"tree":
         raise AccessDenied("Managed records must be a committed directory")
     listing = object_bytes(repo, "ls-tree", "-rz", grant.commit, "--", records_prefix+"/")
+    compatibility=history_compatibility(repo,grant.commit)
     items=[];seen=set()
     for row in listing.split(b"\0"):
         if not row: continue
@@ -50,7 +79,11 @@ def immutable_snapshot(repo, grant,records_prefix="records"):
         raw=object_bytes(repo,"cat-file","blob",oid)
         obj=json.loads(raw,object_pairs_hook=unique_object,parse_constant=reject_constant)
         relative=name.removeprefix(records_prefix+"/")
-        validate_history(obj,"Brain-Bridge/"+relative)
+        logical = "Brain-Bridge/"+relative
+        historical = logical in compatibility
+        if historical and hashlib.sha256(raw).hexdigest() != compatibility[logical]:
+            raise ValueError('Historical compatibility hash mismatch')
+        validate_history(obj,logical,legacy_github_issue_shape=historical)
         for entry in record_entries(obj):
             uid=entry["id"]
             if uid in seen:raise ValueError("Duplicate immutable entry ID")

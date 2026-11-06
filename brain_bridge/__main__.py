@@ -15,9 +15,10 @@ from .github import collect_named
 from .synapse import synapse_request
 from .skill import bundled_skill
 from .migration import plan_migration,apply_migration
+from .rollback import plan_rollback_audit
 from .managed import managed_search, managed_index, managed_sync, managed_graph
 
-VERSION = '0.3.0'
+VERSION = '0.4.0'
 
 def parser():
     cli=argparse.ArgumentParser(description=__doc__)
@@ -48,6 +49,9 @@ def parser():
     migration=sub.add_parser('migrate-plan',help='Inventory a private byte-preserving rehearsal; never switch production')
     migration.add_argument('--source-repo',required=True);migration.add_argument('--destination-repo',required=True);migration.add_argument('--source-id',required=True);migration.add_argument('--destination-id',required=True)
     migration.add_argument('--source-ref',default='main');migration.add_argument('--destination-ref',default='main');migration.add_argument('--namespace',choices=['Brain-Bridge','records'],default='Brain-Bridge')
+    audit=sub.add_parser('rollback-audit',help='Read immutable rollback evidence; never change routing or grants')
+    for name in ('source-repo','destination-repo','source-id','destination-id','source-ref','destination-ref'):
+        audit.add_argument('--'+name,required=True)
     apply=sub.add_parser('migrate-apply',help='Apply an exact reviewed plan to a private working copy only')
     apply.add_argument('--source-repo',required=True);apply.add_argument('--destination-repo',required=True);apply.add_argument('--plan',required=True);apply.add_argument('--execute',action='store_true');apply.add_argument('--yes',action='store_true')
     graph=sub.add_parser('graph',help='Generate authorized record/evidence graphs as JSON, DOT or Mermaid')
@@ -71,6 +75,7 @@ def main(argv=None):
     try:
         if args.action=='skill':result=bundled_skill()
         elif args.action=='synapse':result=synapse_request(args.identity_repo,args.repo,args.source,args.term,args.cache_dir,args.backend,args.limit,args.excerpt_chars)
+        elif args.action=='rollback-audit':result=plan_rollback_audit(args.source_repo,args.destination_repo,args.source_id,args.destination_id,args.source_ref,args.destination_ref)
         elif args.action=='migrate-plan':result={'plan':plan_migration(args.source_repo,args.destination_repo,args.source_id,args.destination_id,args.source_ref,args.destination_ref,args.namespace)}
         elif args.action=='migrate-apply':
             with open(args.plan) as file:plan=json.load(file)
