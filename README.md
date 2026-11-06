@@ -99,3 +99,13 @@ The read-only [`import-plan` workflow](docs/HISTORICAL-IMPORTS.md) proposes an
 authenticated exact-byte historical batch for separate destination review.
 `validate-source` accepts only the complete batch authorized in immutable BASE;
 normal new writes remain strict. Planning does not copy, grant, push or cut over.
+
+### Continuous catch-up observation
+
+The [`reconcile` foundation](docs/RECONCILIATION.md) keeps observed/pending
+captures separate from canonically verified watermarks. One-shot planning is
+read-only by default; bounded JSONL polling and explicitly confirmed external
+metadata checkpoints support restart continuity. Optional confirmed `--refresh`
+fetches and validates only the two selected clean readers without remote-record writes.
+The worker never copies records,
+authorizing imports, changing grants or installing a service.

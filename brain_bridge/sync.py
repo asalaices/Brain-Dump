@@ -19,10 +19,10 @@ def _git_bytes(repo, *args):
 def _git(repo,*args):
     return _git_bytes(repo,*args).decode().strip()
 
-def sync(repo, expected_remote, branch, records_dir, database, contract=None, expected_commit=None, authorize_target=None, build_index=True):
-    """Sync an existing clean checkout; never clone, reset, or force-pull."""
+def preflight(repo, expected_remote, branch, records_dir, database):
+    """Validate a selected existing clean reader without fetching or changing HEAD."""
     repo = Path(repo).expanduser().resolve(strict=True)
-    if not repo.is_dir() or not (repo / ".git").exists():
+    if not repo.is_dir() or not (repo / ".git").is_dir() or (repo / ".git").is_symlink():
         raise SyncError("Only an existing standalone Git checkout is supported")
     if not expected_remote or not branch or branch.startswith("-") or "/" in branch:
         raise SyncError("Explicit remote identity and simple branch name required")
@@ -40,16 +40,22 @@ def sync(repo, expected_remote, branch, records_dir, database, contract=None, ex
     db = Path(database).expanduser().resolve()
     if db.is_relative_to(repo):
         raise SyncError("SQLite index must be outside the Git checkout")
+    return repo,record_root,db
+
+
+def sync(repo, expected_remote, branch, records_dir, database, contract=None, expected_commit=None, authorize_target=None, build_index=True):
+    """Sync an existing clean checkout; never clone, reset, or force-pull."""
+    repo,record_root,db=preflight(repo,expected_remote,branch,records_dir,database)
     _git(repo, "fetch", "--no-tags", "origin", branch)
     target = _git(repo, "rev-parse", "FETCH_HEAD")
     if expected_commit is not None and target != expected_commit:
         raise SyncError("Fetched commit differs from authenticated policy commit")
     _git(repo, "merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD")
-    managed_history = contract == 'history' and not build_index and records_dir == 'records'
+    managed_history = contract == 'history' and not build_index and records_dir in ('records','Brain-Bridge')
     if managed_history:
         from .authority import Grant
         from .managed import immutable_snapshot
-        immutable_snapshot(repo, Grant('sync-validation', '0', 'snapshot', target, branch))
+        immutable_snapshot(repo, Grant('sync-validation', '0', 'snapshot', target, branch),records_prefix=records_dir)
     if contract in ("v3", "history") and not managed_history:
         import json
         from .contract import validate_record, validate_history, record_entries
