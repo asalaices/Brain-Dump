@@ -7,10 +7,63 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+
+def bash_executable(windows=None):
+    """Select Git Bash on Windows, never the unrelated WSL bash launcher."""
+    if windows is None:
+        windows = os.name == 'nt'
+    if not windows:
+        executable = shutil.which('bash')
+        if executable is None:
+            raise RuntimeError('Skill installer tests require an existing Bash executable')
+        return executable
+    git_executable = shutil.which('git')
+    roots = []
+    if git_executable:
+        git_path = Path(git_executable).resolve()
+        roots.extend((git_path.parent, git_path.parent.parent))
+    for variable in ('ProgramFiles', 'ProgramFiles(x86)'):
+        if os.environ.get(variable):
+            roots.append(Path(os.environ[variable]) / 'Git')
+    if os.environ.get('LOCALAPPDATA'):
+        roots.append(Path(os.environ['LOCALAPPDATA']) / 'Programs/Git')
+    for root in roots:
+        for relative in ('bin/bash.exe', 'usr/bin/bash.exe'):
+            candidate = root / relative
+            if candidate.is_file():
+                probe = subprocess.run([str(candidate), '--noprofile', '--norc', '-c',
+                                        'printf "%s" "$BASH_VERSION"'], capture_output=True, text=True)
+                if probe.returncode == 0 and probe.stdout.strip():
+                    return str(candidate)
+    raise RuntimeError('Git Bash was not found beside the selected Git installation; '
+                       'the Windows WSL bash launcher cannot run these tests')
+
+
+class BashSelectionTests(unittest.TestCase):
+    def test_windows_uses_git_bash_instead_of_path_wsl_launcher(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            git = root / 'Git/cmd/git.exe'
+            bash = root / 'Git/bin/bash.exe'
+            git.parent.mkdir(parents=True); bash.parent.mkdir(parents=True)
+            git.write_bytes(b'Synthetic Git locator'); bash.write_bytes(b'Synthetic Bash locator')
+            probe = subprocess.CompletedProcess([str(bash)], 0, stdout='5.2.0', stderr='')
+            with patch('shutil.which', return_value=str(git)) as locate, patch('subprocess.run', return_value=probe) as execute:
+                self.assertEqual(bash_executable(windows=True), str(bash))
+            locate.assert_called_once_with('git')
+            self.assertEqual(execute.call_args.args[0][0], str(bash))
+
+    def test_windows_without_git_bash_fails_instead_of_skipping_or_using_wsl(self):
+        with patch('shutil.which', return_value=None), patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, 'Git Bash was not found'):
+                bash_executable(windows=True)
 
 
 class SkillInstallerTests(unittest.TestCase):
     def setUp(self):
+        self.bash = bash_executable()
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
@@ -26,14 +79,16 @@ class SkillInstallerTests(unittest.TestCase):
             self.git(repo, 'init', '-q')
             self.git(repo, 'config', 'user.name', 'Synthetic')
             self.git(repo, 'config', 'user.email', 'synthetic@example.invalid')
+            self.git(repo, 'config', 'gc.auto', '0')
+            self.git(repo, 'config', 'maintenance.auto', 'false')
         bots = self.owner / 'intelli_bots'
         bots.mkdir()
         # This synthetic owner records delegation only. It has no link code.
-        (bots / 'bot_local_skill_link.sh').write_text('#!/usr/bin/env bash\n'
+        (bots / 'bot_local_skill_link.sh').write_bytes(('#!/usr/bin/env bash\n'
             'printf "owner-called\\n"\n'
             'printf "arg:%s\\n" "$@"\n'
             'printf "target:%s\\n" "${COPILOT_SKILLS_HOME:-default}"\n'
-            'exit "${SYNTHETIC_OWNER_EXIT:-0}"\n')
+            'exit "${SYNTHETIC_OWNER_EXIT:-0}"\n').encode('utf-8'))
         (bots / 'bot_general.inc').write_text('# Synthetic shared runtime fixture\n')
         (bots / 'bot_general.py').write_text('# Synthetic shared runtime fixture\n')
         for repo in (self.public, self.owner):
@@ -45,7 +100,7 @@ class SkillInstallerTests(unittest.TestCase):
                                        text=True, stderr=subprocess.DEVNULL).strip()
 
     def call(self, *args, environment=None):
-        return subprocess.run(['bash', (self.skill / 'install.sh').as_posix(), *map(str, args)],
+        return subprocess.run([self.bash, (self.skill / 'install.sh').as_posix(), *map(str, args)],
                               capture_output=True, text=True,
                               env=dict(os.environ, **(environment or {})))
 
@@ -57,14 +112,14 @@ class SkillInstallerTests(unittest.TestCase):
         for flag in ('--help', '--version'):
             with self.subTest(flag=flag):
                 result = self.call(flag)
-                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.returncode, 0, 'bash=' + self.bash + '\nstdout=' + result.stdout + '\nstderr=' + result.stderr)
                 self.assertNotIn('owner-called', result.stdout)
         self.assertEqual(sorted(str(p.relative_to(self.root)) for p in self.root.rglob('*')), before)
 
     def test_explicit_owner_receives_exact_operation_flags_and_own_source(self):
         result = self.selected('install', '--execute', '--yes', '--debug', '--log-file', 'chosen.log',
                                environment={'COPILOT_SKILLS_HOME': 'chosen-discovery'})
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 0, 'bash=' + self.bash + '\nstdout=' + result.stdout + '\nstderr=' + result.stderr)
         arguments = [row[4:] for row in result.stdout.splitlines() if row.startswith('arg:')]
         self.assertEqual(arguments[:-2], ['install', '--execute', '--yes', '--debug', '--log-file', 'chosen.log'])
         self.assertEqual(arguments[-2], '--source')
@@ -76,7 +131,7 @@ class SkillInstallerTests(unittest.TestCase):
         for command in ('status', 'install', 'uninstall'):
             with self.subTest(command=command):
                 result = self.selected(command)
-                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.returncode, 0, 'bash=' + self.bash + '\nstdout=' + result.stdout + '\nstderr=' + result.stderr)
                 self.assertIn('arg:' + command, result.stdout)
                 self.assertNotIn('arg:--execute', result.stdout)
                 self.assertNotIn('arg:--yes', result.stdout)
@@ -105,7 +160,7 @@ class SkillInstallerTests(unittest.TestCase):
     def test_bundled_source_copy_cannot_become_discovery_source(self):
         outside = self.root / 'wheel-artifact/brain-bridge'
         shutil.copytree(self.skill, outside)
-        result = subprocess.run(['bash', (outside / 'install.sh').as_posix(), '--installer-root',
+        result = subprocess.run([self.bash, (outside / 'install.sh').as_posix(), '--installer-root',
                                  self.owner.as_posix(), 'install', '--execute', '--yes'],
                                 capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
@@ -124,6 +179,7 @@ class SkillInstallerTests(unittest.TestCase):
         files = project['tool']['setuptools']['data-files']['share/brain-bridge/skills/brain-bridge']
         for name in ('README.md', 'SKILL.md', 'install.sh'):
             self.assertIn('skills/brain-bridge/' + name, files)
+        self.assertNotIn(b'\r', (root / 'skills/brain-bridge/install.sh').read_bytes())
         from brain_bridge import __version__
         self.assertEqual(project['project']['version'], __version__)
 
