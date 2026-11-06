@@ -45,7 +45,12 @@ def sync(repo, expected_remote, branch, records_dir, database, contract=None, ex
     if expected_commit is not None and target != expected_commit:
         raise SyncError("Fetched commit differs from authenticated policy commit")
     _git(repo, "merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD")
-    if contract in ("v3", "history"):
+    managed_history = contract == 'history' and not build_index and records_dir == 'records'
+    if managed_history:
+        from .authority import Grant
+        from .managed import immutable_snapshot
+        immutable_snapshot(repo, Grant('sync-validation', '0', 'snapshot', target, branch))
+    if contract in ("v3", "history") and not managed_history:
         import json
         from .contract import validate_record, validate_history, record_entries
         seen_ids=set()
