@@ -29,7 +29,7 @@ def parser():
     cli.add_argument('--version',action='version',version='brain-bridge '+VERSION)
     cli.add_argument('--license',action='version',help='Show copyright, license and warranty notice',version='Copyright (C) 2026 Creative Software Development. AGPL-3.0-only; no warranty. See LICENSE and NOTICE, https://www.gnu.org/licenses/agpl-3.0.html')
     sub=cli.add_subparsers(dest='action',required=True)
-    sub.add_parser('skill',help='Locate and read the bundled consult skill; never install globally or grant access')
+    sub.add_parser('skill',help='Read bundled consultation/submission instructions; never install, grant or activate a writer')
     validation=sub.add_parser('validate-source',help='Local CI: require strict v3 additions and immutable published ledger bytes')
     validation.add_argument('--repo',required=True);validation.add_argument('--base-ref',required=True);validation.add_argument('--ref',default='HEAD')
     s=sub.add_parser('search',help='Local authorized JSON utility; no managed access enforcement')

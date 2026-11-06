@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 Creative Software Development
-"""Locate the packaged shared consult skill without installing or activating it."""
+"""Locate shared consultation/submission instructions without activating a writer."""
 from importlib.metadata import distribution,PackageNotFoundError
 from pathlib import Path
 

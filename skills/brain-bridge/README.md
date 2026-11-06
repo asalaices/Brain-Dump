@@ -1,8 +1,10 @@
-# Brain Bridge consult skill
+# Brain Bridge consultation and submission skill
 
-This package teaches authorized, cited consultation through the shared
-`brain-bridge synapse` command. [SKILL.md](SKILL.md) owns the procedure and
-[agent adapters](references/agent-adapters.md) describe discovery. Skill discovery
+This package teaches authorized, cited consultation through `brain-bridge synapse`
+and immutable contribution through the owner's selected publishing flow.
+[SKILL.md](SKILL.md) owns consultation, [submission](references/submission.md)
+owns authoring/publication, and [agent adapters](references/agent-adapters.md)
+describe discovery. Skill discovery
 does not configure a source, grant access, install the runtime or change publishing.
 
 ## Git-owned discovery
@@ -47,8 +49,10 @@ skills/brain-bridge/install.sh --installer-root /path/to/master-installer uninst
 skills/brain-bridge/install.sh --installer-root /path/to/master-installer uninstall --execute --yes
 ```
 
-Installing this consult package does not replace project-specific legacy
-publishing instructions. A production writer cutover requires its own review.
+Installing this package does not replace committed project publishing policy.
+The submission instructions distinguish legacy, paused and managed writers;
+a production writer cutover requires its own review. A consultation profile
+alone never authorizes direct publication.
 No operational identity, profile, repository registration or credential is
 included in the public package. License: AGPL-3.0-only; original author and
 copyright holder: Creative Software Development.
