@@ -1,6 +1,10 @@
 # Agent discovery adapters
 
-The canonical instructions are SKILL.md and the bounded `brain-bridge synapse` interface. Agents should not implement separate scanners or infer authorization from memory content.
+The canonical instructions are SKILL.md, the bounded `brain-bridge synapse`
+interface and [submission](submission.md). Agents should not implement separate
+scanners or infer authorization from memory content. For an authorized new dump,
+all three agents follow the same committed writer-route decision and publication
+receipt rules; discovery alone never changes the producer destination.
 
 - ChatGPT/Codex: make the reviewed brain-bridge skill discoverable in the chosen skill directory, or follow the repository AGENTS.md pointer. Installation/discovery does not configure a source or grant access.
 - GitHub Copilot: the repository `.github/instructions/brain-bridge.instructions.md` points to the same skill. For another repository, add a reviewed project instruction linking its installed/shared copy when the owner requests that integration.

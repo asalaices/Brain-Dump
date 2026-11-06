@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brain-bridge-framework"
-version = "0.8.0"
+version = "0.8.1"
 description = "Git-backed immutable memory and authenticated managed-source foundation"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,4 +21,5 @@ include = ["brain_bridge*"]
 
 [tool.setuptools.data-files]
 "share/brain-bridge/skills/brain-bridge" = ["skills/brain-bridge/SKILL.md", "skills/brain-bridge/README.md", "skills/brain-bridge/install.sh"]
-"share/brain-bridge/skills/brain-bridge/references" = ["skills/brain-bridge/references/agent-adapters.md"]
+"share/brain-bridge/skills/brain-bridge/references" = ["skills/brain-bridge/references/agent-adapters.md", "skills/brain-bridge/references/submission.md"]
+"share/brain-bridge/schemas" = ["schemas/record.v3.synthetic.json"]

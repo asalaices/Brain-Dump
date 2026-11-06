@@ -1,8 +1,15 @@
 ---
 name: brain-bridge
-description: Consult authorized Brain sources for earlier decisions, investigation clues and project handoffs, using cited synapse requests rather than guessed memory. Use proactively when recorded project context could materially help.
+description: Consult authorized Brain sources for earlier decisions and clues, or author and submit immutable Brain Dumps through the owner's selected publishing flow. Use cited synapse requests for consultation and verified publication receipts for submissions.
 ---
-# Brain Bridge consult
+# Brain Bridge
+
+For earlier context, follow the consultation procedure below. For a new Brain
+Dump, contribution or automatic checkpoint authorized by the owner's project,
+read [submission](references/submission.md) before creating a draft. Check the
+owner's committed publishing route first: consultation configuration and read
+access do not select a writer, grant write access or activate a cutover. Never
+use a public framework checkout as an operational data destination.
 
 Before guessing about earlier project decisions, repeating an investigation, or planning work that may have an existing handoff, consult the configured authorized Brain source. Use relevant terms from the current task. This retrieves recorded context; it does not reveal a model's private reasoning or authorize actions.
 
