@@ -71,3 +71,15 @@ The receipt includes entry ID and source identity. It does not infer a specific
 PR merge from canonical bytes. Keep the original record and ID for every retry.
 Live writer acceptance requires its own reviewed grant; a reader grant alone
 is insufficient.
+
+### Destination CI
+
+`brain-bridge validate-source --repo CHECKOUT --base-ref REVIEWED_BASE_SHA`
+checks committed Git objects only. Existing files in `records/` and `metadata/`
+keep their exact paths, modes and bytes; new records require strict v3, unique
+IDs, a published ancestor coverage anchor, and credential-marker screening.
+Whole-history validation binds provenance overlays and explicit historical
+compatibility pins. A pin cannot exempt a newly added record from strict v3.
+This is a local CI utility, not managed access authorization. It never writes
+files, grants access, pushes or merges. Initial historical imports and catch-up
+migrations need their own separately reviewed acceptance process.
