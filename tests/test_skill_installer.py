@@ -44,7 +44,7 @@ def bash_executable(windows=None):
 class BashSelectionTests(unittest.TestCase):
     def test_windows_uses_git_bash_instead_of_path_wsl_launcher(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             git = root / 'Git/cmd/git.exe'
             bash = root / 'Git/bin/bash.exe'
             git.parent.mkdir(parents=True); bash.parent.mkdir(parents=True)
