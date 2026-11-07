@@ -22,6 +22,8 @@ from .rollback import plan_rollback_audit
 from .validation import validate_source
 from .managed import managed_search, managed_index, managed_sync, managed_graph
 
+from .operator import dispatch as operator_dispatch, OPERATIONS as OPERATOR_OPERATIONS
+
 from . import __version__ as VERSION
 
 def parser():
@@ -97,6 +99,11 @@ def parser():
     publication.add_argument('--identity-repo',required=True);publication.add_argument('--repo',required=True);publication.add_argument('--record',required=True)
     publication.add_argument('--execute','--push',dest='execute',action='store_true',help='Push one verified immutable record branch and propose a PR; requires --yes, never merges')
     publication.add_argument('--yes',action='store_true')
+    operator=sub.add_parser('operator',help='Explicit opt-in integration operator; managed route and normal exact-head PR promotion, never grants or routing changes')
+    operator.add_argument('--project-repo',required=True,help='Owner-selected integration checkout; may be the private instance itself')
+    operator.add_argument('operation',choices=OPERATOR_OPERATIONS)
+    operator.add_argument('--entry');operator.add_argument('--output');operator.add_argument('--record')
+    operator.add_argument('--execute',action='store_true');operator.add_argument('--yes',action='store_true')
     for command in sub.choices.values():
         command.add_argument('--json',action='store_true',help='Emit JSON (the default)')
         command.add_argument('--pretty',action='store_true',help='Indent the same JSON document')
@@ -117,7 +124,8 @@ def main(argv=None):
                 receipt['info']=runtime_info()
                 print(json.dumps(receipt,ensure_ascii=False,indent=2 if args.pretty else None),flush=True)
             return 0
-        if args.action=='skill':result=bundled_skill()
+        if args.action=='operator':result=operator_dispatch(args.project_repo,args.operation,entry=args.entry,output=args.output,record=args.record,execute=args.execute,yes=args.yes)
+        elif args.action=='skill':result=bundled_skill()
         elif args.action=='validate-source':result=validate_source(args.repo,args.base_ref,args.ref)
         elif args.action=='create':result=managed_create(args.identity_repo,args.repo,args.source,args.entry,args.output,args.execute,args.yes)
         elif args.action=='export':result=managed_export(args.identity_repo,args.repo,args.source)
@@ -142,7 +150,7 @@ def main(argv=None):
         elif args.action=='sync':result=sync(args.repo,args.remote,args.branch,args.records,args.db,args.contract)
         else:result={'results':search(args.root,args.term,args.backend,args.db)}
         result['info']=runtime_info()
-        print(json.dumps(result,ensure_ascii=False,indent=2 if args.pretty else None));return 1 if args.action=='synapse' and result['status'] not in ('found','no_match') else 0
+        print(json.dumps(result,ensure_ascii=False,indent=2 if args.pretty else None));return 1 if result.get('ok') is False or (args.action=='synapse' and result['status'] not in ('found','no_match')) else 0
     except (ValueError,RuntimeError,OSError,sqlite3.Error,subprocess.TimeoutExpired) as exc:
         print(json.dumps({'error':'Operation timed out; no result reported' if isinstance(exc,subprocess.TimeoutExpired) else str(exc),'info':runtime_info()}));return 1
 
