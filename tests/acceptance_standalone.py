@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -27,7 +28,9 @@ def main():
         source=root/'public-code'
         shutil.copytree(original,source,ignore=shutil.ignore_patterns('.git','__pycache__','*.egg-info','build','dist','.pytest_cache'))
         env={k:v for k,v in os.environ.items() if k not in ('PYTHONPATH','PYTHONHOME','COPILOT_SKILLS_HOME')}
-        env.update(HOME=str(home),GIT_CONFIG_NOSYSTEM='1',GIT_CONFIG_GLOBAL=os.devnull,PIP_CONFIG_FILE=os.devnull)
+        env.update(HOME=str(home),GIT_CONFIG_NOSYSTEM='1',GIT_CONFIG_GLOBAL=os.devnull,
+                   GIT_CONFIG_COUNT='1',GIT_CONFIG_KEY_0='init.defaultBranch',
+                   GIT_CONFIG_VALUE_0='main',PIP_CONFIG_FILE=os.devnull)
         def run(*command,cwd=root):
             result=subprocess.run([str(x) for x in command],cwd=cwd,env=env,text=True,capture_output=True,timeout=240)
             if result.returncode:raise AssertionError(result.stdout+'\n'+result.stderr)
@@ -38,7 +41,10 @@ def main():
         assert reported.startswith('brain-bridge ')
         version=json.loads(run(sys.executable,'-m','brain_bridge','skill','--json',cwd=source))['info']['script_version']
         launcher=home/'bin/brain-bridge';runtime=home/'runtime'
-        config={'schema_version':2,'host':'independent-laptop','home':str(home),'runtime_dir':str(runtime),'source_repo':str(source),'framework_commit':pin,'framework_version':version,'python':str(Path(sys.executable).resolve()),'python_version':'.'.join(map(str,sys.version_info[:3])),'setuptools_version':'84.2.1','launcher':str(launcher),'skill_home':str(home/'skills'),'skill':'skills/brain-dump','wheel':str(wheel),'wheel_sha256':hashlib.sha256(wheel.read_bytes()).hexdigest()}
+        owner_python=root/'python3'
+        owner_python.write_text('#!/bin/sh\nexec '+shlex.quote(str(Path(sys.executable).resolve()))+' "$@"\n')
+        owner_python.chmod(0o700)
+        config={'schema_version':2,'host':'independent-laptop','home':str(home),'runtime_dir':str(runtime),'source_repo':str(source),'framework_commit':pin,'framework_version':version,'python':str(owner_python),'python_version':'.'.join(map(str,sys.version_info[:3])),'setuptools_version':'84.2.1','launcher':str(launcher),'skill_home':str(home/'skills'),'skill':'skills/brain-dump','wheel':str(wheel),'wheel_sha256':hashlib.sha256(wheel.read_bytes()).hexdigest()}
         manifest=root/'installation.json';manifest.write_text(json.dumps(config))
         command=[sys.executable,source/'bootstrap.py','--config',manifest]
         plan=json.loads(run(*command));assert plan['effects']==[] and not runtime.exists()

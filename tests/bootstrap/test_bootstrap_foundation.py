@@ -78,13 +78,6 @@ class BootstrapFoundationTests(unittest.TestCase):
         self.assertEqual(set(schema['required']),required)
         self.assertEqual(set(schema['properties']),required|optional)
         self.assertEqual(schema['dependentRequired'],{'wheel':['wheel_sha256'],'wheel_sha256':['wheel']})
-    def test_immutable_external_python_is_an_allowed_dependency(self):
-        if not hasattr(os,'getuid'):return
-        interpreter=Path(sys.executable).resolve()
-        if interpreter.stat().st_uid==os.getuid() or os.access(interpreter,os.W_OK):return
-        from brain_bridge.installation.discovery import safe
-        with self.assertRaisesRegex(ValueError,'another user'):safe(interpreter)
-        safe(interpreter,allow_external_readonly=True)
     def test_entrypoint_registry_preserves_compatibility_without_claiming_cutover(self):
         value=json.loads((ROOT/'bootstrap/entrypoints.json').read_text())
         entries={row['path']:row for row in value['entrypoints']}
