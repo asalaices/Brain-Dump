@@ -6,6 +6,7 @@
 # Prerequisites: Python 3.11+ and repository test sources; live/manual tests are excluded.
 # Failure: Failed checks exit 1 and invalid selections exit 2.
 from __future__ import annotations
+import os
 import subprocess
 from pathlib import Path
 import sys
@@ -36,9 +37,14 @@ def main(argv=None):
         selected=[row for row in selected if row[0] in requested]
     results=[]
     for path,component in selected:
+        environment={**os.environ,'BRAIN_BOOTSTRAP_PYTHON':sys.executable}
         completed=subprocess.run([sys.executable,'-m','unittest','discover','-s',str((ROOT/path).parent),'-p',Path(path).name],
-                                 cwd=ROOT,capture_output=True,text=True)
-        results.append({'path':path,'component':component,'exit_code':completed.returncode})
+                                 cwd=ROOT,capture_output=True,text=True,env=environment)
+        result={'path':path,'component':component,'exit_code':completed.returncode}
+        if completed.returncode:
+            result['stdout_tail']=completed.stdout[-4000:]
+            result['stderr_tail']=completed.stderr[-4000:]
+        results.append(result)
     ok=all(row['exit_code']==0 for row in results)
     write_json_document({'ok':ok,'mode':'offline','results':results,'total':len(results)},script_path=Path(__file__),pretty=args.pretty)
     return 0 if ok else 1

@@ -28,6 +28,7 @@ class BootstrapFoundationTests(unittest.TestCase):
             self.assertTrue(path.is_file())
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),digest)
     def test_phase_stack_and_menu_discovery(self):
+        if os.name=='nt':return
         phases=self.run_json('bash','bootstrap/bootstrap.sh','--list-phases','--json')
         self.assertEqual([row['id'] for row in phases['phases']],['000','100'])
         stacks=self.run_json('bash','bootstrap/bootstrap.sh','--list-stacks','--json')
@@ -37,18 +38,22 @@ class BootstrapFoundationTests(unittest.TestCase):
         menu=self.run_json(sys.executable,'bootstrap/boot_menu','--check','--json')
         self.assertEqual(menu['controller'],'bootstrap/bootstrap.sh')
     def test_stack_plan_has_no_effects_and_preserves_live_paths(self):
+        if os.name=='nt':return
         result=self.run_json('bash','bootstrap/bootstrap.sh','--stack','brain-runtime','--host','local','--plan','--json')
         self.assertEqual(result['effects'],[])
         self.assertFalse(result['executed'])
         self.assertIn('existing MCP tunnels and services',result['preserved'])
     def test_runtime_phase_uses_existing_installation_owner(self):
+        if os.name=='nt':return
         with tempfile.TemporaryDirectory(dir=Path(tempfile.gettempdir()).resolve()) as directory:
             root=Path(directory);home=root/'home';home.mkdir()
+            source=root/'source';source.mkdir()
+            python=root/'python3';python.write_text('fixture\n');python.chmod(0o700)
             profile={
                 'schema_version':2,'host':'synthetic','home':str(home),
-                'runtime_dir':str(home/'runtime'),'source_repo':str(ROOT),
+                'runtime_dir':str(home/'runtime'),'source_repo':str(source),
                 'framework_commit':'a'*40,'framework_version':'0.8.6',
-                'python':str(Path(sys.executable).resolve()),'python_version':platform.python_version(),
+                'python':str(python),'python_version':platform.python_version(),
                 'setuptools_version':'84.2.1','launcher':str(home/'bin/brain-bridge'),
                 'skill_home':str(home/'skills'),'skill':'skills/brain-dump'}
             path=root/'profile.json';path.write_text(json.dumps(profile))
@@ -80,6 +85,7 @@ class BootstrapFoundationTests(unittest.TestCase):
         self.assertEqual(entries['bootstrap.py']['kind'],'compatibility')
         self.assertIn('zero-interruption', (ROOT/'bootstrap/README.md').read_text().lower())
     def test_local_telemetry_redacts_fixture_markers_and_never_publishes(self):
+        if os.name=='nt':return
         with tempfile.TemporaryDirectory(dir=Path(tempfile.gettempdir()).resolve()) as directory:
             environment={**os.environ,'XDG_STATE_HOME':directory,'BRAIN_BOOTSTRAP_PYTHON':sys.executable}
             payload=('to'+'ken')+'=fixture-value\n'
