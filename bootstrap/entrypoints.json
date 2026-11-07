@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "scopes": [
+    "bootstrap",
+    "intelli_bots",
+    "brain_bridge",
+    "tests",
+    "bootstrap.py"
+  ],
+  "entrypoints": [
+    {
+      "path": "bootstrap/bootstrap.sh",
+      "kind": "controller",
+      "owner": "Brain-Dump numbered bootstrap controller and stack dispatcher"
+    },
+    {
+      "path": "bootstrap.py",
+      "kind": "compatibility",
+      "owner": "Existing runtime-only compatibility interface retained during zero-interruption migration"
+    },
+    {
+      "path": "brain_bridge/__main__.py",
+      "kind": "application",
+      "owner": "Installed Brain Bridge CLI; bootstrap subcommand remains compatibility-only during migration"
+    }
+  ],
+  "phase_intents": {
+    "000": {
+      "intent": "preflight",
+      "stacks": [
+        "brain-runtime"
+      ]
+    },
+    "100": {
+      "intent": "runtime",
+      "stacks": [
+        "brain-runtime"
+      ]
+    }
+  },
+  "local_flows": [
+    {
+      "host": "local",
+      "operation": "brain-runtime",
+      "entrypoint": "bootstrap/bootstrap.sh --stack brain-runtime --host local",
+      "wrapper_stacks": [
+        "brain-runtime"
+      ],
+      "automatic": false
+    }
+  ]
+}
