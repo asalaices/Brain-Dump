@@ -25,7 +25,7 @@ def load_config(path):
     for key in ('home','runtime_dir','source_repo','python','launcher','skill_home'):
         if not isinstance(c[key],str) or any(x in c[key] for x in ('\0','\r','\n')):
             raise ValueError('Invalid installation path')
-        safe(c[key],allow_link=(key=='launcher'),allow_system_owned=(key=='python'))
+        safe(c[key],allow_link=(key=='launcher'),allow_external_readonly=(key=='python'))
     if c['skill'] != 'skills/brain-dump' or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}',c['host']):
         raise ValueError('Invalid host or skill selection')
     if not re.fullmatch('[0-9a-f]{40}',c['framework_commit']):
