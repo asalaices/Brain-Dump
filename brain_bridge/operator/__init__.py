@@ -8,10 +8,12 @@ committed managed route. No grants, installer or routing edits are performed.
 """
 from . import managed
 from .routing import project_root, refresh_publisher_route, require_managed_promotion_route, control_json, run
+import re
 
 OPERATIONS = ('profile', 'publisher-route', 'status', 'validate', 'latest', 'export', 'pull', 'create', 'check-record', 'dump')
 
-def dispatch(project_repo, operation, *, entry=None, output=None, record=None, execute=False, yes=False):
+def dispatch(project_repo, operation, *, entry=None, output=None, record=None, execute=False, yes=False,
+             expected_generation=None, expected_policy_commit=None):
     if operation not in OPERATIONS:
         raise ValueError('Unsupported operator operation')
     if execute and not yes:
@@ -22,8 +24,15 @@ def dispatch(project_repo, operation, *, entry=None, output=None, record=None, e
         raise ValueError('Record option applies only to operator record operations')
     if (execute or yes) and operation not in ('pull','create','dump'):
         raise ValueError('Execution options do not apply to this read-only operation')
+    bound = expected_generation is not None or expected_policy_commit is not None
+    if bound and (operation != 'dump' or type(expected_generation) is not int or expected_generation < 0
+                  or not isinstance(expected_policy_commit,str) or not re.fullmatch('[0-9a-f]{40}',expected_policy_commit)):
+        raise ValueError('Expected route binding requires dump, a generation and a full policy commit')
     root = project_root(project_repo)
     state = refresh_publisher_route(root)
+    if bound:
+        state = require_managed_promotion_route(root, {'mode':'managed','reader':'managed',
+            'generation':expected_generation,'policy_commit':expected_policy_commit})
     if operation == 'publisher-route':
         return {'status':'route_status', 'effective':state, 'production_changed':False}
     if operation == 'profile':

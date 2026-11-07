@@ -76,7 +76,7 @@ def check_record(c,path):
 
 
 def publish(root,path,c,initial,refresh_route,gh,execute=False,yes=False):
-    """Source operator may merge; the public framework itself never does."""
+    """Explicit operator may merge; the ordinary publisher remains PR-only."""
     if execute and not yes:raise ValueError('Managed publication execution requires --yes')
     pending={'ok':False,'status':'pending','original_draft':str(path),'published':False,'canonical_verified':False}
     if initial['mode']=='paused':return {**pending,'reason':'publisher_paused','retained':True}

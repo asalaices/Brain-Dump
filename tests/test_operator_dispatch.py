@@ -64,6 +64,24 @@ class DispatchTests(unittest.TestCase):
         with patch.object(routing,'control_json',return_value=(None,'a'*40)):
             with self.assertRaisesRegex(ValueError,'explicitly committed'):routing.publisher_route('/synthetic')
 
+    def test_bridge_snapshot_is_checked_before_profile_or_promotion(self):
+        with patch.object(op,'require_managed_promotion_route',side_effect=ValueError('profile changed')) as check,patch.object(op.managed,'publish') as publish:
+            with self.assertRaisesRegex(ValueError,'profile changed'):
+                op.dispatch('project','dump',record='original',execute=True,yes=True,expected_generation=2,expected_policy_commit='a'*40)
+            check.assert_called_once_with(Path('/synthetic/project'),{'mode':'managed','reader':'managed','generation':2,'policy_commit':'a'*40})
+            self.profile.assert_not_called();publish.assert_not_called()
+
+    def test_partial_or_misplaced_snapshot_binding_is_rejected_before_git(self):
+        for operation,options in [('dump',{'expected_generation':2}),('dump',{'expected_policy_commit':'a'*40}),('dump',{'expected_generation':True,'expected_policy_commit':'a'*40}),('status',{'expected_generation':2,'expected_policy_commit':'a'*40})]:
+            with self.subTest(operation=operation,options=options),self.assertRaises(ValueError):op.dispatch('project',operation,**options)
+        self.root.assert_not_called()
+
+    def test_matching_snapshot_continues_using_fresh_verified_state(self):
+        fresh={**self.state,'policy_commit':'b'*40}
+        with patch.object(op,'require_managed_promotion_route',return_value=fresh),patch.object(op.managed,'publish',return_value={'status':'plan'}) as publish:
+            op.dispatch('project','dump',record='original',expected_generation=2,expected_policy_commit='a'*40)
+            self.assertEqual(publish.call_args.args[3],fresh)
+
     def test_operator_pending_json_is_nonzero_and_pretty_equivalent(self):
         results=[]
         for flags in [[],['--json'],['--pretty']]:
