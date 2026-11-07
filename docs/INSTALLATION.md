@@ -1,6 +1,6 @@
 # Standalone runtime installation
 
-Brain-Dump 0.8.5 owns its runtime lifecycle, CLI, integration operator, skill
+Brain-Dump 0.8.6 owns its runtime lifecycle, CLI, integration operator, skill
 discovery and product tests. A new developer needs this public source and an
 owner-controlled private data/identity repository; no private infrastructure
 repository or shell runtime from another project is required.
@@ -30,7 +30,7 @@ profile = {
     "runtime_dir": str(home / ".local/share/brain-bridge"),
     "source_repo": "/absolute/Brain-Dump",
     "framework_commit": "REPLACE_WITH_REVIEWED_40_CHARACTER_COMMIT",
-    "framework_version": "0.8.5",
+    "framework_version": "0.8.6",
     "python": str(pathlib.Path(sys.executable).resolve()),
     "python_version": platform.python_version(),
     "setuptools_version": "84.2.1",
