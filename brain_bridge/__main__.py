@@ -31,6 +31,14 @@ def parser():
     cli.add_argument('--version',action='version',version='brain-bridge '+VERSION)
     cli.add_argument('--license',action='version',help='Show copyright, license and warranty notice',version='Copyright (C) 2026 Creative Software Development. AGPL-3.0-only; no warranty. See LICENSE and NOTICE, https://www.gnu.org/licenses/agpl-3.0.html')
     sub=cli.add_subparsers(dest='action',required=True)
+    bootstrap=sub.add_parser('bootstrap',help='Standalone pinned runtime plan/install/verify; never grants, routes or services')
+    bootstrap.add_argument('--config',required=True)
+    bootstrap.add_argument('--operation',choices=['plan','preflight','install','verify'],default='plan')
+    bootstrap.add_argument('--execute',action='store_true');bootstrap.add_argument('--yes',action='store_true')
+    discovery=sub.add_parser('skill-link',help='Plan or reconcile Git-owned skill discovery without another repository')
+    discovery.add_argument('operation',choices=['status','install','uninstall'])
+    discovery.add_argument('--source',required=True);discovery.add_argument('--skill-home',required=True)
+    discovery.add_argument('--execute',action='store_true');discovery.add_argument('--yes',action='store_true')
     sub.add_parser('skill',help='Read bundled consultation/submission instructions; never install, grant or activate a writer')
     validation=sub.add_parser('validate-source',help='Local CI: require strict v3 additions and immutable published ledger bytes')
     validation.add_argument('--repo',required=True);validation.add_argument('--base-ref',required=True);validation.add_argument('--ref',default='HEAD')
@@ -127,6 +135,12 @@ def main(argv=None):
                 print(json.dumps(receipt,ensure_ascii=False,indent=2 if args.pretty else None),flush=True)
             return 0
         if args.action=='operator':result=operator_dispatch(args.project_repo,args.operation,entry=args.entry,output=args.output,record=args.record,execute=args.execute,yes=args.yes,expected_generation=args.expected_generation,expected_policy_commit=args.expected_policy_commit)
+        elif args.action=='bootstrap':
+            from .installation import dispatch
+            result=dispatch(args.config,args.operation,args.execute,args.yes)
+        elif args.action=='skill-link':
+            from .installation.discovery import reconcile_skill
+            result=reconcile_skill(args.source,args.skill_home,args.operation,args.execute,args.yes)
         elif args.action=='skill':result=bundled_skill()
         elif args.action=='validate-source':result=validate_source(args.repo,args.base_ref,args.ref)
         elif args.action=='create':result=managed_create(args.identity_repo,args.repo,args.source,args.entry,args.output,args.execute,args.yes)
