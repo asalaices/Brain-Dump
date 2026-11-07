@@ -78,27 +78,27 @@
 <text x="455" y="835" class="body">Strict upstream authorization by default</text>
 <text x="455" y="859" class="body">Commit · entry ID · hash · JSON Pointer</text>
 <text x="455" y="883" class="body">Data freshness ≠ authorization freshness</text>
-<path d="M950 640 V677 H625 V710" class="edge"/>
+<path d="M820 640 V675 H625 V710" class="edge"/>
 <path d="M815 810 H850 V707 H890" class="edge"/>
 <path d="M850 810 V847 H890" class="edge"/>
 <path d="M850 847 V987 H890" class="edge"/>
 <path d="M850 987 V1127 H890" class="edge"/>
-<rect x="930" y="650" width="220" height="114" rx="15" fill="#17263e" stroke="#344862"/>
+<rect x="890" y="650" width="220" height="114" rx="15" fill="#17263e" stroke="#344862"/>
 <text x="905" y="675" class="label">B  LOCAL BOT</text>
 <text x="905" y="706" class="head">CLI / local API</text>
 <text x="905" y="734" class="small" style="font-size:12px">Same engine; thin adapter</text>
 <path d="M1110 707 H1200" class="edge"/>
-<rect x="930" y="790" width="220" height="114" rx="15" fill="#17263e" stroke="#344862"/>
+<rect x="890" y="790" width="220" height="114" rx="15" fill="#17263e" stroke="#344862"/>
 <text x="905" y="815" class="label">C  LOCAL MCP</text>
 <text x="905" y="846" class="head">stdio adapter</text>
 <text x="905" y="874" class="small" style="font-size:12px">No public tunnel needed</text>
 <path d="M1110 847 H1200" class="edge"/>
-<rect x="930" y="930" width="220" height="114" rx="15" fill="#17263e" stroke="#344862"/>
+<rect x="890" y="930" width="220" height="114" rx="15" fill="#17263e" stroke="#344862"/>
 <text x="905" y="955" class="label">D  REMOTE MCP</text>
 <text x="905" y="986" class="head">HTTPS MCP</text>
 <text x="905" y="1014" class="small" style="font-size:12px">Authenticated caller + source</text>
 <path d="M1110 987 H1200" class="edge"/>
-<rect x="930" y="1070" width="220" height="114" rx="15" fill="#17263e" stroke="#344862"/>
+<rect x="890" y="1070" width="220" height="114" rx="15" fill="#17263e" stroke="#344862"/>
 <text x="905" y="1095" class="label">E  WEB EXPERIENCE</text>
 <text x="905" y="1126" class="head">Web API</text>
 <text x="905" y="1154" class="small" style="font-size:12px">Authorized records + aggregates</text>
