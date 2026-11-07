@@ -475,3 +475,25 @@ with independent-owner clean-install acceptance, strict invalid-profile handling
 and byte-exact historical compatibility. Define timezone/agent policy without
 relabeling unsupported identities, rewriting records or inventing grants.
 Coordinate the BDT2 inventory and BDT5 contract work before implementation.
+
+### BDT47: Package and configure an app-owned Windows Git/Bash toolchain
+
+Prerequisites: BDT23 (verified binaries) and BDT28 (rollback/owned uninstall).
+Integrates with the guided new-user configurator (BD59), not a second installer.
+A native Windows entrypoint must work before Bash is installed. Discover and
+reuse a compatible installation or offer a pinned, verified product-owned
+PortableGit bundle for Git Bash; distinguish MinGit Git-only mode explicitly.
+Keep vendor binaries in release assets/verified acquisition, not source history;
+retain third-party licenses/notices and satisfy exact component corresponding-
+source obligations, including an offline distribution plan. Scope tool paths
+to owned processes and preserve system Git, credentials and user settings.
+
+Acceptance includes architecture/version checks, paths with spaces/Unicode,
+validated Bash/backend argv, Git authentication handoff, clean Windows install,
+upgrade/rollback/resume/cancellation and owned removal. Supported Windows/CPU
+combinations need actual acceptance; this roadmap does not claim deployment.
+
+The configurator offers component-specific Previous/Next navigation, a progress
+overview, path and prerequisite discovery, reviewable plans and bounded
+authenticated manifest operations. Reuse the same bootstrap backend for GUI,
+CLI and automation; no arbitrary command strings or implicit grants/routes.

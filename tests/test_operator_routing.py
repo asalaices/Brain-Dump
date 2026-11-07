@@ -12,7 +12,7 @@ class RoutingTests(unittest.TestCase):
         b.git(self.root,'init','-q','-b','main');b.git(self.root,'config','user.name','Synthetic');b.git(self.root,'config','user.email','synthetic@example.invalid')
         (self.root/'README').write_text('synthetic');b.git(self.root,'add','.');b.git(self.root,'commit','-qm','fixture')
         b.git(self.root,'update-ref','refs/remotes/origin/main',b.git(self.root,'rev-parse','HEAD'))
-        self.c={'schema_version':1,'cli':'/synthetic/brain-bridge','identity_repo':'/synthetic/identity','source_repo':'/synthetic/source','source':'primary','cache_dir':'/synthetic/cache','minimum_version':'0.8.0'}
+        self.c={'schema_version':1,'cli':str(self.root/'bin/brain-bridge'),'identity_repo':str(self.root/'identity'),'source_repo':str(self.root/'source'),'source':'primary','cache_dir':str(self.root/'cache'),'minimum_version':'0.8.0'}
 
     def commit(self):
         b.git(self.root,'add','.');b.git(self.root,'commit','-qm','reviewed fixture');b.git(self.root,'update-ref','refs/remotes/origin/main',b.git(self.root,'rev-parse','HEAD'))

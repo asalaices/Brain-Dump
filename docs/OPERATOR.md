@@ -121,3 +121,16 @@ managed implementation with a thin command adapter. Preserve pending originals,
 instance policy, source identity/grants and cache. Historical validators and
 private retirement manifests are not product dependencies and should not be
 copied into public examples.
+
+## Test and workflow ownership
+
+The framework CI matrix owns the operator promotion, profile/routing, dispatcher
+and ordinary publisher regressions. It also imports the installed operator from
+a temporary working directory in isolated Python mode and checks its CLI; source
+checkout imports cannot substitute for a missing packaged module. Profile test
+fixtures use platform-native absolute paths.
+
+A private integration retains its own thin-adapter, registered-bootstrap and
+retired-history protection tests. The completed pre-cutover dual-run comparison
+against an old private producer can be retired with its historic receipts intact;
+public runtime tests must not import that private producer as an oracle.
