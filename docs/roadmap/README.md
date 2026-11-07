@@ -463,3 +463,15 @@ Phase: Production. Prerequisites: BDT44.
 
 Acceptance: Observe accepted reliability window, restore/revocation drills and user onboarding; resolve incidents and publish support handoff. Requery all completed BDT TODOs as Done with evidence; keep unsupported clients, deferred optional features and existing BD work explicitly pending rather than falsely closing the track.
 
+
+### BDT46: Make standalone record profiles portable without weakening existing history validation
+
+Audit follow-up: the current v3 profile fixes America/Chicago and two publishing
+agent identifiers. Packaging the operator removes a private-code dependency,
+but does not make that profile configurable.
+
+Acceptance: introduce an explicitly configured reviewed profile/version contract
+with independent-owner clean-install acceptance, strict invalid-profile handling
+and byte-exact historical compatibility. Define timezone/agent policy without
+relabeling unsupported identities, rewriting records or inventing grants.
+Coordinate the BDT2 inventory and BDT5 contract work before implementation.

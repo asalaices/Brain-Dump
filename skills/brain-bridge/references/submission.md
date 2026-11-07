@@ -29,6 +29,15 @@ Never switch its route, install a profile or grant access merely to make a
 submission succeed. Missing publishing policy/binding is a setup gap: request
 the owner-selected identifiers or workflow, not credentials.
 
+## Optional packaged operator
+
+Version 0.8.2 also supplies `brain-bridge operator` for an owner-selected
+managed integration. See [the operator guide](../../../docs/OPERATOR.md). It
+uses the owner's own committed instance policy and can normally promote an
+exact record PR only when that workflow is explicitly authorized. No private
+project checkout is a public installation dependency. Keep ordinary `publish`
+PR-only; installing this command does not itself authorize merging.
+
 ## Framework recipe for an explicitly selected managed workflow
 
 Use these commands only when the owner's workflow explicitly selects the
