@@ -34,6 +34,8 @@ def main():
             return result.stdout.strip()
         for command in [('init','-q'),('config','user.name','Synthetic'),('config','user.email','synthetic@example.invalid'),('config','commit.gpgsign','false'),('add','.'),('commit','-qm','independent public source')]:run('git','-C',source,*command)
         pin=run('git','-C',source,'rev-parse','HEAD')
+        reported=run(sys.executable,source/'bootstrap.py','--version')
+        assert reported.startswith('brain-bridge ')
         version=json.loads(run(sys.executable,'-m','brain_bridge','skill','--json',cwd=source))['info']['script_version']
         launcher=home/'bin/brain-bridge';runtime=home/'runtime'
         config={'schema_version':2,'host':'independent-laptop','home':str(home),'runtime_dir':str(runtime),'source_repo':str(source),'framework_commit':pin,'framework_version':version,'python':str(Path(sys.executable).resolve()),'python_version':'.'.join(map(str,sys.version_info[:3])),'setuptools_version':'84.2.1','launcher':str(launcher),'skill_home':str(home/'skills'),'skill':'skills/brain-dump','wheel':str(wheel),'wheel_sha256':hashlib.sha256(wheel.read_bytes()).hexdigest()}
@@ -49,6 +51,10 @@ def main():
         assert skill['skill_name']=='brain-dump' and '\nname: brain-dump\n' in skill['content']
         assert not (source/'skills/brain-bridge').exists()
         assert skill['content']==(source/'skills/brain-dump/SKILL.md').read_text()
+        bundled=Path(skill['path']).parent
+        for name in ('OPERATOR.md','INSTALLATION.md','MANAGED-SOURCES.md'):
+            guide=(bundled/'../../docs'/name).resolve()
+            assert guide.is_file() and guide.read_text()==(source/'docs'/name).read_text()
         # Only tests from the public source are visible; -I excludes CWD/user paths.
         probe="""import sys,pathlib,unittest
 import brain_bridge,brain_bridge.installation,brain_bridge.operator
@@ -61,7 +67,7 @@ result=unittest.TextTestRunner().run(suite)
 assert result.wasSuccessful() and not result.skipped
 """
         run(python,'-I','-c',probe,source/'tests')
-        print(json.dumps({'ok':True,'version':version,'master_checkout_required':False,'offline_wheel':True,'install_verified':True,'idempotent':True,'installed_submission_tests':True,'canonical_skill':'brain-dump','wheel_sha256':config['wheel_sha256']}))
+        print(json.dumps({'ok':True,'version':version,'master_checkout_required':False,'offline_wheel':True,'install_verified':True,'idempotent':True,'installed_submission_tests':True,'canonical_skill':'brain-dump','bundled_guides_verified':True,'bootstrap_version_without_config':True,'wheel_sha256':config['wheel_sha256']}))
 
 
 if __name__=='__main__':main()

@@ -6,6 +6,8 @@ import importlib
 import io
 import json
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -16,6 +18,12 @@ class CLITests(unittest.TestCase):
         output=io.StringIO()
         with contextlib.redirect_stdout(output):importlib.import_module('brain_bridge.__main__')
         self.assertEqual(output.getvalue(),'')
+    def test_bootstrap_version_does_not_require_configuration(self):
+        from brain_bridge import __version__
+        root=Path(__file__).resolve().parents[1]
+        result=subprocess.run([sys.executable,str(root/'bootstrap.py'),'--version'],text=True,capture_output=True,check=True)
+        self.assertEqual(result.stdout.strip(),'brain-bridge '+__version__)
+
     def test_license_notice_names_the_original_author(self):
         output=io.StringIO()
         with contextlib.redirect_stdout(output),self.assertRaises(SystemExit) as stopped:main(['--license'])
