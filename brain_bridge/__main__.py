@@ -104,6 +104,8 @@ def parser():
     operator.add_argument('operation',choices=OPERATOR_OPERATIONS)
     operator.add_argument('--entry');operator.add_argument('--output');operator.add_argument('--record')
     operator.add_argument('--execute',action='store_true');operator.add_argument('--yes',action='store_true')
+    operator.add_argument('--expected-generation',type=int,help='Optional dump binding supplied with --expected-policy-commit')
+    operator.add_argument('--expected-policy-commit',help='Bind dump to the caller-selected committed route/profile snapshot')
     for command in sub.choices.values():
         command.add_argument('--json',action='store_true',help='Emit JSON (the default)')
         command.add_argument('--pretty',action='store_true',help='Indent the same JSON document')
@@ -124,7 +126,7 @@ def main(argv=None):
                 receipt['info']=runtime_info()
                 print(json.dumps(receipt,ensure_ascii=False,indent=2 if args.pretty else None),flush=True)
             return 0
-        if args.action=='operator':result=operator_dispatch(args.project_repo,args.operation,entry=args.entry,output=args.output,record=args.record,execute=args.execute,yes=args.yes)
+        if args.action=='operator':result=operator_dispatch(args.project_repo,args.operation,entry=args.entry,output=args.output,record=args.record,execute=args.execute,yes=args.yes,expected_generation=args.expected_generation,expected_policy_commit=args.expected_policy_commit)
         elif args.action=='skill':result=bundled_skill()
         elif args.action=='validate-source':result=validate_source(args.repo,args.base_ref,args.ref)
         elif args.action=='create':result=managed_create(args.identity_repo,args.repo,args.source,args.entry,args.output,args.execute,args.yes)

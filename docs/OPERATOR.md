@@ -90,6 +90,12 @@ before normal merge, then synchronizes/retries the unchanged envelope and checks
 canonical unique-ID count at that same commit. Server refusal stops the merge.
 No `--admin`, protection bypass or direct main push is used.
 
+Version 0.8.3 additionally supports paired `--expected-generation` and
+`--expected-policy-commit` on `operator ... dump`. A compatibility bridge can
+bind its caller-selected snapshot before delegation; a changed generation or
+profile is rejected before planning or promotion. The policy commit may advance
+through unrelated changes only when its bound profile and generation agree.
+
 A paused writer returns a nonzero pending receipt and retains the original,
 without consulting the runtime for a dump. Changed routes/profiles, denied
 access or failed canonical verification withhold completion. Retry the same
