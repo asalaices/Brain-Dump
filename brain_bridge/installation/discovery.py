@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 
-def safe(path, allow_link=False):
+def safe(path, allow_link=False, allow_system_owned=False):
     path = Path(path)
     if not path.is_absolute() or '..' in path.parts:
         raise ValueError('Installation paths must be absolute')
@@ -16,6 +16,9 @@ def safe(path, allow_link=False):
         if item.exists() and hasattr(os, 'getuid') and item.stat().st_uid != os.getuid():
             # System-owned ancestors are normal; only the selected object is owned.
             if item == path:
+                mode=item.stat().st_mode
+                if allow_system_owned and item.stat().st_uid == 0 and not mode & 0o022:
+                    continue
                 raise ValueError('Installation path belongs to another user')
 
 
