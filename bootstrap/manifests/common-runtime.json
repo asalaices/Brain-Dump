@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "source_repository": "asalaices/master-01",
+  "source_commit": "b34358959b8ddf4d85dc266c0d33c6d912df08a0",
+  "files": {
+    "intelli_bots/bot_general.inc": "19c5785425db2c36640eb75dd3b8429cf6b097aceaee856088fd150f8626960c",
+    "intelli_bots/bot_general.py": "c78c768adf94c6fc58f0ef584cfa8da4e31ac734f23194732a5e8148148d8a1c",
+    "intelli_bots/bot_general.cjs": "4b44fca0782a3970bcef4bb7583fb5f44f1da7305a83c7693ba90036606a9744",
+    "intelli_bots/bot_posix.inc": "211c9c894e338becf22344f116bf91d6a90d222b9ab74fb88f0f4f4e02f89500"
+  }
+}

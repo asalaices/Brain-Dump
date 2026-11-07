@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "host",
+    "home",
+    "runtime_dir",
+    "source_repo",
+    "framework_commit",
+    "framework_version",
+    "python",
+    "python_version",
+    "setuptools_version",
+    "launcher",
+    "skill_home",
+    "skill"
+  ],
+  "additionalProperties": false,
+  "dependentRequired": {
+    "wheel": [
+      "wheel_sha256"
+    ],
+    "wheel_sha256": [
+      "wheel"
+    ]
+  },
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "host": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"
+    },
+    "home": {
+      "type": "string"
+    },
+    "runtime_dir": {
+      "type": "string"
+    },
+    "source_repo": {
+      "type": "string"
+    },
+    "framework_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "framework_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "python": {
+      "type": "string"
+    },
+    "python_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "setuptools_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "launcher": {
+      "type": "string"
+    },
+    "skill_home": {
+      "type": "string"
+    },
+    "skill": {
+      "const": "skills/brain-dump"
+    },
+    "legacy_version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "legacy_skill_sha256": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "SKILL.md": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "references/agent-adapters.md": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "operation": {
+      "enum": [
+        "brain-bridge-runtime",
+        "macbook-brain-bridge"
+      ]
+    },
+    "wheel": {
+      "type": "string"
+    },
+    "wheel_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

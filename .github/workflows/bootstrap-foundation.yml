@@ -1,0 +1,62 @@
+name: Brain bootstrap foundation
+on:
+  pull_request:
+    paths:
+      - 'bootstrap/**'
+      - 'intelli_bots/**'
+      - 'manifests/**'
+      - 'tests/bootstrap/**'
+      - 'tests/suite_runner.py'
+      - '.github/workflows/bootstrap-foundation.yml'
+  push:
+    paths:
+      - 'bootstrap/**'
+      - 'intelli_bots/**'
+      - 'manifests/**'
+      - 'tests/bootstrap/**'
+      - 'tests/suite_runner.py'
+      - '.github/workflows/bootstrap-foundation.yml'
+permissions:
+  contents: read
+jobs:
+  offline:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+        python: ['3.11', '3.14']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Validate controller, menu, ownership and zero-interruption plans
+        run: |
+          bash -n bootstrap/bootstrap.sh bootstrap/includes/bootstrap_general.inc bootstrap/phases/*.sh bootstrap/telemetry/*.sh
+          python3 bootstrap/boot_menu --check --pretty
+          python3 tests/suite_runner.py --component bootstrap --all --offline --pretty
+      - name: Report repository-wide script-interface migration state
+        run: python3 intelli_bots/script_contract_audit.py --root . --json --pretty
+      - name: Verify executable modes
+        shell: bash
+        run: |
+          for path in \
+            bootstrap/bootstrap.sh \
+            bootstrap/boot_menu \
+            bootstrap/phases/000-preflight.sh \
+            bootstrap/phases/100-runtime.sh \
+            bootstrap/assets/controller.py \
+            bootstrap/assets/preflight_phase.py \
+            bootstrap/assets/runtime_phase.py \
+            bootstrap/telemetry/mac-run.sh \
+            bootstrap/telemetry/publish.sh \
+            bootstrap/telemetry/run-tests.sh \
+            intelli_bots/script_contract_audit.py \
+            tests/bootstrap/test_bootstrap_foundation.py \
+            tests/suite_runner.py
+          do
+            test "$(git ls-files -s "$path" | awk '{print $1}')" = 100755
+          done

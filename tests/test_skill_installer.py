@@ -118,7 +118,8 @@ class InstallationProfileTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name).resolve();self.home=self.root/'new user';self.home.mkdir()
         self.path=self.root/'installation.json'
-        self.c={'schema_version':2,'host':'my-laptop','home':str(self.home),'runtime_dir':str(self.home/'runtime'),'source_repo':str(self.root/'public-code'),'framework_commit':'a'*40,'framework_version':'0.8.5','python':str(Path(sys.executable).resolve()),'python_version':'.'.join(map(str,sys.version_info[:3])),'setuptools_version':'84.2.1','launcher':str(self.home/'bin/brain-bridge'),'skill_home':str(self.home/'skills'),'skill':'skills/brain-dump'}
+        python=self.root/'python3';python.write_text('fixture\n');python.chmod(0o700)
+        self.c={'schema_version':2,'host':'my-laptop','home':str(self.home),'runtime_dir':str(self.home/'runtime'),'source_repo':str(self.root/'public-code'),'framework_commit':'a'*40,'framework_version':'0.8.5','python':str(python),'python_version':'.'.join(map(str,sys.version_info[:3])),'setuptools_version':'84.2.1','launcher':str(self.home/'bin/brain-bridge'),'skill_home':str(self.home/'skills'),'skill':'skills/brain-dump'}
 
     def load(self):
         self.path.write_text(json.dumps(self.c));return load_config(self.path)

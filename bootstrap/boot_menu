@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+# script_version: 1.0.0
+# Purpose: Discover and validate registered Brain-Dump bootstrap phases and stacks without executing installation.
+# Usage: python3 bootstrap/boot_menu [--check|--list] [--host local] [--json|--pretty]
+# Output: json
+# Prerequisites: Registered phases.conf, stacks, and entrypoints.json; help/version are read-only.
+# Failure: Nonzero exit for missing, malformed, or undiscoverable bootstrap registrations.
+from __future__ import annotations
+import argparse
+import json
+from pathlib import Path
+import sys
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'intelli_bots'));sys.path.insert(0,str(ROOT/'bootstrap/assets'))
+from bot_general import OutputArgumentParser, add_output_arguments, run_cli, script_interface, write_json_document
+from controller import phases,load_stack
+script_interface(__file__,purpose='Discover and validate registered Brain-Dump bootstrap phases and stacks.',output='json')
+
+def catalog():
+    rows=phases();stacks=[]
+    for path in sorted((ROOT/'bootstrap/stacks').glob('*.json')):
+        load_stack(path.stem,rows);stacks.append(path.stem)
+    ownership=json.loads((ROOT/'bootstrap/entrypoints.json').read_text(encoding='utf-8'))
+    if ownership.get('schema_version')!=1:raise ValueError('Invalid bootstrap ownership registry')
+    registered={row['path'] for row in ownership.get('entrypoints',[])}
+    if 'bootstrap/bootstrap.sh' not in registered:raise ValueError('Bootstrap controller is not registered')
+    for stack in stacks:
+        if not any(stack in row.get('wrapper_stacks',[]) for row in ownership.get('local_flows',[])):
+            raise ValueError('Stack is not discoverable through a local flow: '+stack)
+    return {'ok':True,'host':'local',
+            'phases':[{'id':row['id'],'name':row['name'],'needs':row['needs'],'platforms':row['platforms']} for row in rows.values()],
+            'stacks':stacks,'controller':'bootstrap/bootstrap.sh'}
+
+def main(argv=None):
+    parser=OutputArgumentParser(description=__doc__)
+    mode=parser.add_mutually_exclusive_group();mode.add_argument('--check',action='store_true');mode.add_argument('--list',action='store_true')
+    parser.add_argument('--host',choices=['local'],default='local');add_output_arguments(parser);args=parser.parse_args(argv)
+    result=catalog();result['action']='check' if args.check else 'list'
+    write_json_document(result,script_path=Path(__file__),pretty=args.pretty);return 0
+
+if __name__=='__main__':raise SystemExit(run_cli(main,script_path=Path(__file__)))
