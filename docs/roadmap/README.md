@@ -6,6 +6,13 @@ exist. The authoritative execution statuses, internal UUIDs, evidence and
 dependencies live in the owner's Simple-Todos **BDT** track. This public document
 defines scope and task labels; it does not embed private tracker data.
 
+## Architecture diagram
+
+[Open the scalable SVG](architecture.svg). The diagram describes the planned
+architecture; component availability remains subject to the delivery gates below.
+
+![Brain delivery architecture: direct Git and synced-cache access](architecture.svg)
+
 ## Product outcome and repository ownership
 
 Install one Brain runtime that can read authorized remote Git history directly,
