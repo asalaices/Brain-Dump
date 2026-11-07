@@ -8,6 +8,10 @@ Track implementation in [BD program #272](https://github.com/asalaices/master-01
 
 Software is licensed under **AGPL-3.0-only**. Copyright (C) 2026 **Creative Software Development**. Preserve the applicable original-author, copyright and license notices; see [LICENSE](LICENSE) and [NOTICE](NOTICE). Private operational records and credentials are separate from the software license.
 
+## Vision: Brain Evolution
+
+[Brain Evolution](Brain-Evolution.md) documents our hybrid neural vocabulary, the proposed Cortex / Brain-Cotletex experience, Brain Gate operations, deep metadata provenance, repository swim lanes, and a long-term opt-in inter-group Synapses collaboration roadmap. It is a living vision, not a claim that the planned UI or federation is shipped.
+
 ## Production delivery roadmap
 
 The [BDT roadmap](docs/roadmap/README.md) covers direct Git bots, continuous local
