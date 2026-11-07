@@ -18,6 +18,8 @@ These are planned deliverables; current capabilities are described below.
 ## Packaged integration operator
 
 Version 0.8.2 packages optional managed promotion under `brain_bridge/operator/`.
+Start with [standalone installation](docs/INSTALLATION.md) for the public runtime and Git-owned skill discovery.
+
 The [operator guide](docs/OPERATOR.md) explains standalone installation, committed
 instance policy and explicit normal PR promotion. Ordinary `publish` remains
 PR-only; no private master-01 checkout is required for the packaged operator.

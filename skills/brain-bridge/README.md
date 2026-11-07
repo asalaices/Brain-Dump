@@ -1,58 +1,30 @@
 # Brain Bridge consultation and submission skill
 
-This package teaches authorized, cited consultation through `brain-bridge synapse`
-and immutable contribution through the owner's selected publishing flow.
-[SKILL.md](SKILL.md) owns consultation, [submission](references/submission.md)
-owns authoring/publication, and [agent adapters](references/agent-adapters.md)
-describe discovery. Skill discovery
-does not configure a source, grant access, install the runtime or change publishing.
+The public Brain-Dump package owns runtime installation and Git-owned skill
+discovery. No private integration checkout or external installer is needed.
+See [standalone installation](../../docs/INSTALLATION.md) for a complete setup.
 
-## Git-owned discovery
-
-Use this package from a reviewed Git checkout. The installed framework also
-bundles these documents for inspection with `brain-bridge skill --json`; a wheel's
-copied artifact is not a Git-owned discovery source.
-
-The thin installer delegates every link decision to an explicitly selected
-existing master installer checkout. It never implements its own link replacement,
-copying, backup or conflict-resolution logic. There is no implicit private path
-or automatic installer download.
+The native Python interface works before Bash is installed:
 
 ```sh
-# Inspect this package's discovery target.
-skills/brain-bridge/install.sh --installer-root /path/to/master-installer status
-
-# Review the install plan, then explicitly install if the target is unowned.
-skills/brain-bridge/install.sh --installer-root /path/to/master-installer install
-skills/brain-bridge/install.sh --installer-root /path/to/master-installer install --execute --yes
-
-# Select a Codex discovery directory through the existing owner's override.
-COPILOT_SKILLS_HOME=/chosen/codex/skills \
-  skills/brain-bridge/install.sh --installer-root /path/to/master-installer status
+python3 -m brain_bridge skill-link status --source /absolute/Brain-Dump/skills/brain-bridge --skill-home /absolute/user/.codex/skills --pretty
+python3 -m brain_bridge skill-link install --source /absolute/Brain-Dump/skills/brain-bridge --skill-home /absolute/user/.codex/skills --execute --yes --pretty
 ```
 
-The selected checkout must contain Git-tracked
-`intelli_bots/bot_local_skill_link.sh`, `bot_general.inc` and `bot_general.py`.
-Its existing installer owns stdout, diagnostics, action semantics and exit status.
-`status` is read-only. Install and uninstall plan by default; mutation requires
-`--execute`, and `--yes` supplies explicit noninteractive confirmation. The same
-`--debug` and `--log-file` options remain available.
+Use `uninstall` with the same explicit source and target to plan removal; add
+`--execute --yes` to remove only the exact owned link. Existing directories,
+files and links to another source are preserved as conflicts. Skill contents
+must be tracked and match their committed Git version. Installed wheel copies
+are inspection artifacts (`brain-bridge skill`), not Git-owned discovery sources.
 
-The default discovery directory belongs to that installer. Set
-`COPILOT_SKILLS_HOME` deliberately when selecting another agent. Existing regular
-files, directories and links to another source are conflicts and remain untouched.
-Preserve and reconcile their ownership separately; this wrapper has no force mode.
-Uninstall removes only a link pointing to this exact source package:
+For existing POSIX callers, `install.sh status|install|uninstall` forwards to this
+same package, with optional `--skill-home`; its historical
+`COPILOT_SKILLS_HOME` override selects the target. `--installer-root` is retired.
+Set `BRAIN_BRIDGE_PYTHON` when selecting an interpreter explicitly.
 
-```sh
-skills/brain-bridge/install.sh --installer-root /path/to/master-installer uninstall
-skills/brain-bridge/install.sh --installer-root /path/to/master-installer uninstall --execute --yes
-```
+[SKILL.md](SKILL.md) owns consultation; [submission](references/submission.md)
+owns authoring and publication. Discovery never configures a source, grants
+access, installs services or changes publishing policy. The install profile
+selects local resources; committed registration and grants remain independent.
 
-Installing this package does not replace committed project publishing policy.
-The submission instructions distinguish legacy, paused and managed writers;
-a production writer cutover requires its own review. A consultation profile
-alone never authorizes direct publication.
-No operational identity, profile, repository registration or credential is
-included in the public package. License: AGPL-3.0-only; original author and
-copyright holder: Creative Software Development.
+License: AGPL-3.0-only. Original author: Creative Software Development.

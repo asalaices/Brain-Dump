@@ -1,6 +1,6 @@
 # Packaged integration operator
 
-Version **0.8.2** includes `brain_bridge/operator/` in the normal framework
+Version **0.8.4** includes `brain_bridge/operator/` in the normal framework
 distribution. Its command is `brain-bridge operator`. No private project checkout,
 private helper import or owner-specific path is required to install this code.
 Tests use synthetic independent Git roots and mocked provider operations.
@@ -10,6 +10,8 @@ operator is an explicit opt-in workflow for an installation whose owner has
 selected normal exact-head promotion. It never grants access, changes routes,
 installs services, force-pushes or bypasses repository merge policy. Installing
 the package does not authorize a merge.
+
+Install through [the public bootstrap](INSTALLATION.md); it owns runtime and skill discovery without an external installer.
 
 ## Select your own instance
 
@@ -43,7 +45,7 @@ values; do not copy another person's paths or credentials.
   "source_repo": "/absolute/private/reader",
   "source": "selected-source",
   "cache_dir": "/absolute/private/cache",
-  "minimum_version": "0.8.2"
+  "minimum_version": "0.8.4"
 }
 ```
 

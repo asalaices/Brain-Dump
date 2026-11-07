@@ -51,3 +51,13 @@ jobs:
               subprocess.run([sys.executable, '-I', '-c', probe], cwd=directory, check=True)
               result = subprocess.run([sys.executable, '-I', '-m', 'brain_bridge', 'operator', '--help'], cwd=directory, capture_output=True, text=True, check=True)
               assert '--expected-policy-commit' in result.stdout
+      - name: Standalone installation without private integration code
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys, tempfile
+          if os.name != 'nt':
+              with tempfile.TemporaryDirectory() as directory:
+                  subprocess.run([sys.executable, '-m', 'pip', 'wheel', '--disable-pip-version-check', '--no-deps', '--wheel-dir', directory, '.'], check=True)
+                  wheels = list(pathlib.Path(directory).glob('brain_bridge_framework-*.whl'))
+                  assert len(wheels) == 1
+                  subprocess.run([sys.executable, 'tests/acceptance_standalone.py', '--wheel', str(wheels[0].resolve())], check=True)
