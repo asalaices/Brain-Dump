@@ -22,8 +22,8 @@ def safe(path, allow_link=False):
 def validate_source(source):
     source = Path(source)
     safe(source)
-    if source.name != 'brain-bridge' or not source.is_dir():
-        raise ValueError('Select a Git-owned brain-bridge skill directory')
+    if source.name != 'brain-dump' or not source.is_dir():
+        raise ValueError('Select a Git-owned brain-dump skill directory')
     def git(*args):
         p = subprocess.run(['git', '-C', str(source), *args], capture_output=True,
                            text=True, timeout=30)
@@ -45,8 +45,8 @@ def validate_source(source):
         if git('hash-object', '--', str(path)) != git('rev-parse', 'HEAD:' + tracked):
             raise ValueError('Skill source differs from its committed Git version')
     text = (source / 'SKILL.md').read_text(encoding='utf-8')
-    if not text.startswith('---\n') or '\nname: brain-bridge\n' not in text:
-        raise ValueError('Skill frontmatter does not name brain-bridge')
+    if not text.startswith('---\n') or '\nname: brain-dump\n' not in text:
+        raise ValueError('Skill frontmatter does not name brain-dump')
     return source
 
 
@@ -58,7 +58,7 @@ def reconcile_skill(source, skill_home, operation, execute=False, yes=False):
     source = validate_source(source)
     home = Path(skill_home)
     safe(home)
-    target = home / 'brain-bridge'
+    target = home / 'brain-dump'
     safe(target, allow_link=True)
     def state():
         if target.is_symlink():
@@ -90,3 +90,48 @@ def reconcile_skill(source, skill_home, operation, execute=False, yes=False):
             'target': str(target), 'before': before, 'state': state(),
             'executed': execute, 'changed': state() != before,
             'activates_sources': False}
+
+
+def migrate_skill(source, skill_home, previous_source, execute=False, yes=False):
+    """Replace one explicitly identified obsolete link; no foreign replacement."""
+    source = validate_source(source)
+    home = Path(skill_home); safe(home)
+    previous_source = Path(previous_source); safe(previous_source)
+    if previous_source.name != 'brain-bridge':
+        raise ValueError('Select the exact prior brain-bridge source')
+    if yes and not execute:
+        raise ValueError('--yes requires --execute')
+    old = home / 'brain-bridge'; target = home / 'brain-dump'
+    safe(old, allow_link=True); safe(target, allow_link=True)
+    def state(path, expected):
+        if path.is_symlink():
+            return 'owned' if os.readlink(path) == str(expected) else 'conflict'
+        return 'conflict' if path.exists() else 'missing'
+    before = (state(old,previous_source),state(target,source))
+    if 'conflict' in before:
+        raise ValueError('Discovery migration refuses foreign links, files or directories')
+    created = removed = False
+    if execute:
+        if not yes:raise ValueError('Migration requires --execute --yes')
+        home.mkdir(mode=0o700,parents=True,exist_ok=True)
+        lock=home/'.brain-bridge-discovery.lock'
+        try:lock.mkdir(mode=0o700)
+        except FileExistsError as exc:raise ValueError('Another discovery operation is active; retry') from exc
+        try:
+            if (state(old,previous_source),state(target,source)) != before:
+                raise ValueError('Discovery ownership changed before migration')
+            if before[1]=='missing':
+                target.symlink_to(source,target_is_directory=True);created=True
+            if before[0]=='owned':old.unlink();removed=True
+            if state(target,source)!='owned' or state(old,previous_source)!='missing':
+                raise ValueError('Discovery migration verification failed')
+        except Exception:
+            if removed and not old.exists() and not old.is_symlink():old.symlink_to(previous_source,target_is_directory=True)
+            if created and state(target,source)=='owned':target.unlink()
+            raise
+        finally:lock.rmdir()
+    return {'ok':True,'operation':'migrate','source':str(source),'target':str(target),
+            'previous_source':str(previous_source),'previous_target':str(old),
+            'executed':execute,'changed':created or removed,
+            'state':state(target,source),'previous_state':state(old,previous_source),
+            'activates_sources':False}

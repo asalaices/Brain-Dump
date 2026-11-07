@@ -31,7 +31,7 @@ class SubmissionRecipeTests(unittest.TestCase):
         self.variables = {'$IDENTITY_REPO': str(f.identity), '$READER_REPO': str(f.repo),
             '$SOURCE': 'primary', '$CACHE_DIR': str(f.cache), '$ENTRY': str(f.authored),
             '$DRAFT': str(f.output), '$BASELINE_ID': f.doc['entry']['id']}
-        reference = Path(__file__).resolve().parents[1] / 'skills/brain-bridge/references/submission.md'
+        reference = Path(__file__).resolve().parents[1] / 'skills/brain-dump/references/submission.md'
         self.commands = [[self.variables.get(token, token) for token in shlex.split(line)[1:]]
                          for line in re.findall(r'^brain-bridge .+$', reference.read_text(), re.MULTILINE)]
         for module in ('adapters', 'publication', 'managed', 'synapse'):
