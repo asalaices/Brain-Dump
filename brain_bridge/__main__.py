@@ -36,8 +36,9 @@ def parser():
     bootstrap.add_argument('--operation',choices=['plan','preflight','install','verify'],default='plan')
     bootstrap.add_argument('--execute',action='store_true');bootstrap.add_argument('--yes',action='store_true')
     discovery=sub.add_parser('skill-link',help='Plan or reconcile Git-owned skill discovery without another repository')
-    discovery.add_argument('operation',choices=['status','install','uninstall'])
+    discovery.add_argument('operation',choices=['status','install','uninstall','migrate'])
     discovery.add_argument('--source',required=True);discovery.add_argument('--skill-home',required=True)
+    discovery.add_argument('--previous-source',help='Exact former brain-bridge source; only for migrate')
     discovery.add_argument('--execute',action='store_true');discovery.add_argument('--yes',action='store_true')
     sub.add_parser('skill',help='Read bundled consultation/submission instructions; never install, grant or activate a writer')
     validation=sub.add_parser('validate-source',help='Local CI: require strict v3 additions and immutable published ledger bytes')
@@ -139,8 +140,13 @@ def main(argv=None):
             from .installation import dispatch
             result=dispatch(args.config,args.operation,args.execute,args.yes)
         elif args.action=='skill-link':
-            from .installation.discovery import reconcile_skill
-            result=reconcile_skill(args.source,args.skill_home,args.operation,args.execute,args.yes)
+            from .installation.discovery import reconcile_skill,migrate_skill
+            if args.operation=='migrate':
+                if not args.previous_source:raise ValueError('Migration requires --previous-source')
+                result=migrate_skill(args.source,args.skill_home,args.previous_source,args.execute,args.yes)
+            else:
+                if args.previous_source:raise ValueError('--previous-source is only valid for migrate')
+                result=reconcile_skill(args.source,args.skill_home,args.operation,args.execute,args.yes)
         elif args.action=='skill':result=bundled_skill()
         elif args.action=='validate-source':result=validate_source(args.repo,args.base_ref,args.ref)
         elif args.action=='create':result=managed_create(args.identity_repo,args.repo,args.source,args.entry,args.output,args.execute,args.yes)

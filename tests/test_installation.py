@@ -4,10 +4,10 @@
 def synthetic_config():
     return {'schema_version':2,'host':'synthetic-host','home':'/synthetic',
         'runtime_dir':'/synthetic/runtime','source_repo':'/synthetic/source',
-        'framework_commit':'a'*40,'framework_version':'0.8.4','python':'/synthetic/python',
+        'framework_commit':'a'*40,'framework_version':'0.8.5','python':'/synthetic/python',
         'python_version':'3.11.18','setuptools_version':'84.2.1',
         'launcher':'/synthetic/bin/brain-bridge','skill_home':'/synthetic/skills',
-        'skill':'skills/brain-bridge','legacy_version':'0.3.0',
+        'skill':'skills/brain-dump','legacy_version':'0.3.0',
         'legacy_skill_sha256':{},'operation':'brain-bridge-runtime'}
 
 import copy
@@ -50,7 +50,7 @@ class BrainRuntimeTests(unittest.TestCase):
         self.commands.append([str(a) for a in args])
         if list(args)[-1:] == ['--version']:
             return 'Python '+self.config['python_version'] if str(args[0])==self.config['python'] else 'brain-bridge '+self.config['framework_version']
-        if any(str(x).endswith('/skills/brain-bridge/install.sh') for x in args):
+        if any(str(x).endswith('/skills/brain-dump/install.sh') for x in args):
             self.target.parent.mkdir(parents=True,exist_ok=True);self.target.symlink_to(self.skill)
         return ''
     def build(self,c):

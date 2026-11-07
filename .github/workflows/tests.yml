@@ -42,6 +42,8 @@ jobs:
               assert skill.is_file()
               assert (skill.parent / 'references' / 'agent-adapters.md').is_file()
               assert receipt['activates_sources'] is False
+              assert receipt['skill_name'] == 'brain-dump'
+              assert '\nname: brain-dump\n' in receipt['content']
       - name: Installed operator package and CLI boundary
         shell: python
         run: |

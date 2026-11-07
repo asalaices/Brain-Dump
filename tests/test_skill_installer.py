@@ -20,10 +20,10 @@ class SkillInstallerTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
         self.repo = self.root / 'independent public source'; self.repo.mkdir()
-        self.source = self.repo / 'skills/brain-bridge'
-        shutil.copytree(ROOT / 'skills/brain-bridge',self.source)
+        self.source = self.repo / 'skills/brain-dump'
+        shutil.copytree(ROOT / 'skills/brain-dump',self.source)
         self.home = self.root / 'new user'; self.home.mkdir()
-        self.target = self.home / 'skills/brain-bridge'
+        self.target = self.home / 'skills/brain-dump'
         for args in [('init','-q'),('config','user.name','Synthetic'),('config','user.email','test@example.invalid'),('config','commit.gpgsign','false'),('add','.'),('commit','-qm','public package')]:
             subprocess.run(['git','-C',str(self.repo),*args],check=True,capture_output=True)
 
@@ -59,7 +59,7 @@ class SkillInstallerTests(unittest.TestCase):
         self.assertFalse(self.target.parent.exists())
 
     def test_wheel_copy_is_not_a_git_owned_source(self):
-        copy=self.root/'artifact/brain-bridge';shutil.copytree(self.source,copy)
+        copy=self.root/'artifact/brain-dump';shutil.copytree(self.source,copy)
         with self.assertRaisesRegex(ValueError,'tracked'):reconcile_skill(copy,self.target.parent,'status')
 
     def test_symlinked_parent_and_missing_confirmation_refuse(self):
@@ -81,12 +81,44 @@ class SkillInstallerTests(unittest.TestCase):
         self.assertEqual(receipts[0],receipts[1]);self.assertIn('script_version',receipts[0]['info'])
 
 
+class DiscoveryMigrationTests(unittest.TestCase):
+    setUp=SkillInstallerTests.setUp
+    def test_migration_plans_then_replaces_only_exact_prior_link(self):
+        from brain_bridge.installation.discovery import migrate_skill
+        previous=self.root/'old repository/skills/brain-bridge'
+        self.target.parent.mkdir();old=self.target.parent/'brain-bridge';old.symlink_to(previous,target_is_directory=True)
+        self.assertFalse(migrate_skill(self.source,self.target.parent,previous)['executed'])
+        self.assertTrue(old.is_symlink());self.assertFalse(self.target.exists())
+        receipt=migrate_skill(self.source,self.target.parent,previous,True,True)
+        self.assertTrue(receipt['changed']);self.assertEqual(self.target.resolve(),self.source);self.assertFalse(old.is_symlink())
+        self.assertFalse(migrate_skill(self.source,self.target.parent,previous,True,True)['changed'])
+
+    def test_migration_does_not_remove_foreign_previous_link(self):
+        from brain_bridge.installation.discovery import migrate_skill
+        self.target.parent.mkdir();old=self.target.parent/'brain-bridge';old.symlink_to(self.root/'foreign',target_is_directory=True)
+        with self.assertRaisesRegex(ValueError,'foreign'):
+            migrate_skill(self.source,self.target.parent,self.root/'old/brain-bridge',True,True)
+        self.assertFalse(self.target.exists());self.assertEqual(os.readlink(old),str(self.root/'foreign'))
+
+    def test_failed_old_link_removal_rolls_back_new_discovery(self):
+        from brain_bridge.installation.discovery import migrate_skill
+        from unittest.mock import patch
+        previous=self.root/'old/brain-bridge';self.target.parent.mkdir();old=self.target.parent/'brain-bridge';old.symlink_to(previous,target_is_directory=True)
+        actual=Path.unlink
+        def unlink(path,*args,**kwargs):
+            if path==old:raise OSError('synthetic unlink failure')
+            return actual(path,*args,**kwargs)
+        with patch.object(Path,'unlink',unlink),self.assertRaisesRegex(OSError,'synthetic'):
+            migrate_skill(self.source,self.target.parent,previous,True,True)
+        self.assertTrue(old.is_symlink());self.assertFalse(self.target.exists());self.assertFalse(self.target.is_symlink())
+
+
 class InstallationProfileTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name).resolve();self.home=self.root/'new user';self.home.mkdir()
         self.path=self.root/'installation.json'
-        self.c={'schema_version':2,'host':'my-laptop','home':str(self.home),'runtime_dir':str(self.home/'runtime'),'source_repo':str(self.root/'public-code'),'framework_commit':'a'*40,'framework_version':'0.8.4','python':str(Path(sys.executable).resolve()),'python_version':'.'.join(map(str,sys.version_info[:3])),'setuptools_version':'84.2.1','launcher':str(self.home/'bin/brain-bridge'),'skill_home':str(self.home/'skills'),'skill':'skills/brain-bridge'}
+        self.c={'schema_version':2,'host':'my-laptop','home':str(self.home),'runtime_dir':str(self.home/'runtime'),'source_repo':str(self.root/'public-code'),'framework_commit':'a'*40,'framework_version':'0.8.5','python':str(Path(sys.executable).resolve()),'python_version':'.'.join(map(str,sys.version_info[:3])),'setuptools_version':'84.2.1','launcher':str(self.home/'bin/brain-bridge'),'skill_home':str(self.home/'skills'),'skill':'skills/brain-dump'}
 
     def load(self):
         self.path.write_text(json.dumps(self.c));return load_config(self.path)

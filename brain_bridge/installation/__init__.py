@@ -45,7 +45,7 @@ def safe(path,allow_link=False):
 
 def paths(c):
     base=Path(c['runtime_dir']);source=Path(c['source_repo'])
-    return base,source,base/'environments'/(c['framework_commit']+'-py'+c['python_version']),Path(c['skill_home'])/'brain-bridge',source/c['skill']
+    return base,source,base/'environments'/(c['framework_commit']+'-py'+c['python_version']),Path(c['skill_home'])/'brain-dump',source/c['skill']
 
 
 def source_state(c):

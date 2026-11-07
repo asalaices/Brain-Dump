@@ -1,6 +1,6 @@
 # Standalone runtime installation
 
-Brain-Dump 0.8.4 owns its runtime lifecycle, CLI, integration operator, skill
+Brain-Dump 0.8.5 owns its runtime lifecycle, CLI, integration operator, skill
 discovery and product tests. A new developer needs this public source and an
 owner-controlled private data/identity repository; no private infrastructure
 repository or shell runtime from another project is required.
@@ -30,13 +30,13 @@ profile = {
     "runtime_dir": str(home / ".local/share/brain-bridge"),
     "source_repo": "/absolute/Brain-Dump",
     "framework_commit": "REPLACE_WITH_REVIEWED_40_CHARACTER_COMMIT",
-    "framework_version": "0.8.4",
+    "framework_version": "0.8.5",
     "python": str(pathlib.Path(sys.executable).resolve()),
     "python_version": platform.python_version(),
     "setuptools_version": "84.2.1",
     "launcher": str(home / ".local/bin/brain-bridge"),
     "skill_home": str(home / ".codex/skills"),
-    "skill": "skills/brain-bridge"
+    "skill": "skills/brain-dump"
 }
 path = home / "brain-installation.json"
 path.write_text(json.dumps(profile, indent=2) + "\n")
@@ -102,3 +102,20 @@ and synthetic provider transport. It exposes no private integration source.
 Production provider credentials/grants are deliberately not provisioned by a test.
 Private installations retain their host policy adapter and private history guards;
 product implementation and lifecycle tests are owned here.
+
+## Existing brain-bridge discovery
+
+The canonical skill is now named `brain-dump`. The CLI remains `brain-bridge`.
+A consuming repository keeps instance configuration/policy, not another skill.
+To migrate an existing exact owned link, plan then explicitly execute:
+
+```sh
+brain-bridge skill-link migrate --source /absolute/Brain-Dump/skills/brain-dump --skill-home /absolute/user/.codex/skills --previous-source /absolute/old-repository/skills/brain-bridge --pretty
+brain-bridge skill-link migrate --source /absolute/Brain-Dump/skills/brain-dump --skill-home /absolute/user/.codex/skills --previous-source /absolute/old-repository/skills/brain-bridge --execute --yes --pretty
+```
+
+The old link must point to precisely that declared source (or already be absent).
+The new target must be unowned or already point to the canonical public source.
+Foreign links, regular directories and copied skills remain conflicts. A failed
+migration restores the prior owned link and removes only its newly created link.
+This does not change an identity, source registration, grant or publishing route.

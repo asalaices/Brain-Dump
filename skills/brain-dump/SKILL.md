@@ -1,8 +1,12 @@
 ---
-name: brain-bridge
+name: brain-dump
 description: Consult authorized Brain sources for earlier decisions and clues, or author and submit immutable Brain Dumps through the owner's selected publishing flow. Use cited synapse requests for consultation and verified publication receipts for submissions.
 ---
-# Brain Bridge
+# Brain Dump
+
+This public package is the canonical skill owner. Consuming projects may supply
+instance routing and local policy, but must not copy or redefine this skill.
+Use `brain-bridge skill --json` to locate the installed shared instructions.
 
 For earlier context, follow the consultation procedure below. For a new Brain
 Dump, contribution or automatic checkpoint authorized by the owner's project,

@@ -26,7 +26,7 @@ def load_config(path):
         if not isinstance(c[key],str) or any(x in c[key] for x in ('\0','\r','\n')):
             raise ValueError('Invalid installation path')
         safe(c[key],allow_link=(key=='launcher'))
-    if c['skill'] != 'skills/brain-bridge' or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}',c['host']):
+    if c['skill'] != 'skills/brain-dump' or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}',c['host']):
         raise ValueError('Invalid host or skill selection')
     if not re.fullmatch('[0-9a-f]{40}',c['framework_commit']):
         raise ValueError('An immutable framework commit is required')
