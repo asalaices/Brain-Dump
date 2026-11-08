@@ -45,6 +45,9 @@ field. `--json` is the default and `--pretty` changes only whitespace. Tests run
 with `python3 -B -m unittest discover -s tests -v` and require no credentials.
 Current new records use schema v3; explicit history reads preserve v1/v2 bytes.
 
+The [tests and GitHub Actions audit](docs/TEST-COVERAGE-AUDIT.md) preserves the
+2026-11-08 coverage matrix, observed CI results, limitations and prioritized gaps.
+It is a historical audit, not a claim that the recommendations are implemented.
 
 [Observability documentation](docs/OBSERVABILITY.md) covers named read-only CI
 adapters and deterministic JSON/DOT/Mermaid evidence graphs. The managed-source
