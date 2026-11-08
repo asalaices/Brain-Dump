@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from .authority import GitHubAuthority
-from .contract import record_entries, validate_record
+from .contract import record_entries, validate_record, active_profile
 from .managed import reader_root, immutable_snapshot, snapshot_documents, cache_path
 from .policy import AccessDenied
 from .publication import SECRET, validate_anchor
@@ -141,9 +141,10 @@ def managed_create(identity_repo, source_repo, source_name, entry_path, output,
     moment = datetime.fromisoformat(entry['timestamp'])
     if moment.utcoffset() is None:
         raise ValueError('Authored timestamp requires an offset')
-    local = moment.astimezone(ZoneInfo('America/Chicago'))
+    profile = active_profile()
+    local = moment.astimezone(ZoneInfo(profile.default_timezone))
     envelope = {'schema_version': 3, 'date': local.date().isoformat(),
-                'timezone': 'America/Chicago', 'entry': entry}
+                'timezone': profile.default_timezone, 'entry': entry}
     validate_record(envelope)
     relative = local.strftime('%Y/%m/%Y-%m-%d-%H-%M-%S-') + entry['id'] + '.json'
     validate_record(envelope, 'Brain-Bridge/' + relative)
