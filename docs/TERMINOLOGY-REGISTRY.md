@@ -1,8 +1,7 @@
 # Terminology registry (CORTEX1)
 
-**Status: proposed for owner approval.** This registry consolidates the hybrid vocabulary in
-[Brain-Evolution §3](../Brain-Evolution.md) into one reviewable record. Approval is an owner decision;
-nothing here changes shipped behavior, grants, routing or data. Names are product metaphors, not
+**Status: approved by the owner on 2026-11-07 as CORTEX1 acceptance (PR #30).** This registry consolidates the hybrid vocabulary in
+[Brain-Evolution §3](../Brain-Evolution.md) into one reviewable record. Approval covers this registry only; the *Maturity* column still marks which names are shipped. Nothing here changes shipped behavior, grants, routing or data. Names are product metaphors, not
 authority or security principals. The *API term* is the stable machine identifier; display names may change.
 
 Maturity values: **Existing** (shipped, contract preserved), **Proposed** (named, not shipped),
