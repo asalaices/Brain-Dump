@@ -117,10 +117,11 @@ New authoring, publication, review and consultation remain distinct operations;
 none authorizes trust enrollment, TODO changes, deployment or producer cutover.
 
 
-## Mandatory Brain Dump after every implementation commit
+## Automatic checkpoint triggers
 
-For owner-authorized work in a repository, every source, documentation, skill, configuration, generated-view or tracker-data commit must trigger a Brain Dump. Do not wait for a reminder or treat a local commit, branch push or merge as the end of the workflow. Record each exact repository/branch/commit, purpose, changed behavior, validation, push/merge state, important context, failures and next steps through the selected guarded Brain flow. Never include secrets or private internal reasoning. A normal main merge is also a checkpoint event; a submission may cover a bounded commit/merge batch only if it explicitly accounts for every commit and no completed handoff omits an unpublished implementation commit.
-
-Publication must be verified canonically before calling the checkpoint flushed. If a real queue, paused route, authorization failure or external error prevents submission, preserve one stable external original, identify the uncovered commits and report its exact ID/path/hash and blocker. Resume the same original through the approved flow when allowed; never silently skip, rewrite its identity or fall back to a retired writer. This authorizes the checkpoint flow only where the owner already authorized it; it grants no new destination, credential, grant, route, runtime or unrelated action permission.
-
-**No recursive checkpoint loop:** a commit/PR containing only the Brain Dump record, its publication manifest/receipt or mechanical checkpoint metadata completes that dump and does not trigger another dump. A read-only recheck or acknowledgment of an unchanged published checkpoint is also not a new commit event. If substantive implementation is mixed into that commit, it still requires coverage. Do not create task edits merely to announce a dump or create another dump merely to announce its publication.
+[SKILL.md](../SKILL.md#automatic-checkpoints) owns the shared triggers, including
+owner-authorized substantive read-only milestones, blockers and input needs,
+exact implementation/merge SHA coverage and the nonrecursive bookkeeping
+exception. Apply this submission procedure to those events without redefining
+the triggers in client adapters. A missing or denied writer remains a reported
+blocker, not an implicit grant or permission to change the publishing route.
