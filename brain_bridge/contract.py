@@ -11,6 +11,11 @@ from uuid import UUID
 import re
 import copy
 import json
+import os
+from dataclasses import dataclass
+
+PROFILE_ENV = 'BRAIN_BRIDGE_RECORD_PROFILE'
+AGENT_TOKEN = re.compile(r'[a-z0-9][a-z0-9._-]{0,63}')
 
 ENTRY_FIELDS = {
     "id": str, "timestamp": str, "agent": str, "entry_type": str,
@@ -28,7 +33,69 @@ FILE_PATTERN = re.compile(
 class ContractError(ValueError):
     pass
 
-def validate_record(record, path=None):
+
+@dataclass(frozen=True)
+class RecordProfile:
+    """Reviewed policy for the timezones and publishing agents a v3 record may use."""
+    name: str
+    timezones: tuple
+    agents: tuple
+    default_timezone: str
+
+
+MASTER01_PROFILE = RecordProfile('master-01-v3', ('America/Chicago',), ('copilot', 'chatgpt'), 'America/Chicago')
+
+
+def parse_profile(document):
+    """Validate a record profile document; unknown fields and invalid values fail closed."""
+    keys = {'schema_version', 'name', 'timezones', 'agents', 'default_timezone'}
+    if not isinstance(document, dict) or set(document) != keys:
+        raise ContractError('Record profile requires exactly: ' + ', '.join(sorted(keys)))
+    if type(document['schema_version']) is not int or document['schema_version'] != 1:
+        raise ContractError('Only record profile schema_version 1 is supported')
+    name = document['name']
+    if not isinstance(name, str) or not AGENT_TOKEN.fullmatch(name):
+        raise ContractError('Invalid record profile name')
+    zones, agents = document['timezones'], document['agents']
+    if not isinstance(zones, list) or not zones or len(set(zones)) != len(zones):
+        raise ContractError('Profile timezones must be a nonempty list without duplicates')
+    for zone in zones:
+        if not isinstance(zone, str) or not zone.strip():
+            raise ContractError('Invalid profile timezone')
+        try:
+            ZoneInfo(zone)
+        except (ZoneInfoNotFoundError, ValueError, OSError) as exc:
+            raise ContractError('Unknown profile timezone') from exc
+    if not isinstance(agents, list) or not agents or len(set(agents)) != len(agents):
+        raise ContractError('Profile agents must be a nonempty list without duplicates')
+    if not all(isinstance(a, str) and AGENT_TOKEN.fullmatch(a) for a in agents):
+        raise ContractError('Profile agents must be lowercase identifiers')
+    if document['default_timezone'] not in zones:
+        raise ContractError('default_timezone must be one of the profile timezones')
+    return RecordProfile(name, tuple(zones), tuple(agents), document['default_timezone'])
+
+
+def load_profile(path):
+    from pathlib import Path
+    file = Path(path)
+    if file.is_symlink() or not file.is_file() or file.stat().st_size > 65536:
+        raise ContractError('Record profile must be a regular JSON file up to 64 KiB')
+    try:
+        document = json.loads(file.read_bytes())
+    except (ValueError, RecursionError) as exc:
+        raise ContractError('Record profile is not valid JSON') from exc
+    return parse_profile(document)
+
+
+def active_profile(profile=None):
+    """Explicit profile, else the file named by BRAIN_BRIDGE_RECORD_PROFILE, else master-01."""
+    if profile is not None:
+        return profile
+    configured = os.environ.get(PROFILE_ENV)
+    return load_profile(configured) if configured else MASTER01_PROFILE
+
+def validate_record(record, path=None, profile=None):
+    profile = active_profile(profile)
     try:
         json.dumps(record, allow_nan=False)
     except (TypeError, ValueError, RecursionError) as exc:
@@ -43,16 +110,16 @@ def validate_record(record, path=None):
         raise ContractError("Invalid date") from exc
     if not isinstance(record["timezone"], str) or not record["timezone"].strip():
         raise ContractError("Invalid timezone")
-    if record["timezone"] != "America/Chicago":
-        raise ContractError("The master-01 v3 profile requires America/Chicago")
+    if record["timezone"] not in profile.timezones:
+        raise ContractError(f"The {profile.name} profile requires one of: " + ", ".join(profile.timezones))
     entry = record["entry"]
     if not isinstance(entry, dict):
         raise ContractError("entry must be an object")
     for key, expected in ENTRY_FIELDS.items():
         if key not in entry or not isinstance(entry[key], expected):
             raise ContractError(f"Missing or invalid entry.{key}")
-    if entry["agent"] not in ("copilot","chatgpt"):
-        raise ContractError("The master-01 v3 profile requires a supported publishing agent")
+    if entry["agent"] not in profile.agents:
+        raise ContractError(f"The {profile.name} profile requires a supported publishing agent")
     validate_provenance(entry["provenance"])
     try:
         uid = UUID(entry["id"])
@@ -102,7 +169,7 @@ def validate_record(record, path=None):
     return record
 
 
-def validate_history(record, path=None, *, legacy_github_issue_shape=False, legacy_analysis_object=False):
+def validate_history(record, path=None, *, legacy_github_issue_shape=False, legacy_analysis_object=False, profile=None):
     """Read historical v1/v2 without rewriting; new publication remains v3-only."""
     if not isinstance(record, dict) or type(record.get('schema_version')) is not int:
         raise ContractError('Invalid historical envelope')
@@ -127,7 +194,7 @@ def validate_history(record, path=None, *, legacy_github_issue_shape=False, lega
                             issue['number'] = str(issue['number'])
                         if 'relationship' not in issue:
                             issue['relationship'] = 'unrecorded'
-        validate_record(candidate,path)
+        validate_record(candidate,path,profile)
         return record
     if version not in (1,2):
         raise ContractError('Unsupported historical schema')
