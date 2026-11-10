@@ -34,6 +34,11 @@ function statusFixture(activity, getStorage = () => ({getItem: () => null, setIt
     hideButton: new Element(), notice: new Element(), getStorage
   };
   parts.notice.hidden = true;
+  const chevron = new Element();
+  parts.hideButton.querySelector = selector => {
+    assert.equal(selector, 'span');
+    return chevron;
+  };
   parts.drawer.contains = target => [parts.drawer, parts.contents, parts.button, parts.hideButton].includes(target);
   return {...parts, dispose: bindApiStatus(parts)};
 }
@@ -271,6 +276,7 @@ test('the hide surface persists collapse, closes details and retains an accessib
   assert.equal(parts.contents.attributes['aria-hidden'], 'true');
   assert.equal(parts.hideButton.attributes['aria-expanded'], 'false');
   assert.equal(parts.hideButton.attributes['aria-label'], 'Show API activity control');
+  assert.equal(parts.hideButton.querySelector('span').textContent, '›');
   assert.equal(parts.hideButton.focused, true);
   assert.equal(saved.get('cortex.api-drawer.collapsed'), 'true');
   activity.configure();
@@ -283,6 +289,7 @@ test('the hide surface persists collapse, closes details and retains an accessib
   assert.equal(restored.contents.inert, false);
   assert.equal(restored.contents.attributes['aria-hidden'], 'false');
   assert.equal(restored.hideButton.attributes['aria-label'], 'Hide API activity control');
+  assert.equal(restored.hideButton.querySelector('span').textContent, '‹');
   assert.equal(saved.get('cortex.api-drawer.collapsed'), 'false');
   parts.dispose();
   restored.dispose();
@@ -351,6 +358,7 @@ test('browser entry wires real selectors and never probes an invented API', asyn
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
   assert.equal(ids.length, new Set(ids).size);
   const elements = new Map(ids.map(id => [`#${id}`, new Element()]));
+  elements.get('#api-drawer-toggle').querySelector = () => new Element();
   const documentTarget = new EventTarget();
   documentTarget.documentElement = new Element();
   documentTarget.querySelector = selector => {
@@ -439,12 +447,15 @@ test('API trigger has only its icon and a separate hover/focus tooltip in a top-
   assert.match(html, /id="api-details"[^>]*tabindex="-1" hidden/);
   const css = await readFile(new URL('../../web/styles/base.css', import.meta.url), 'utf8');
   assert.match(css, /\.api-drawer \{[^}]*position: fixed;[^}]*top: calc\(4px[^}]*left: calc\(4px/);
-  assert.match(css, /#api-details \{[^}]*position: fixed;[^}]*left: calc\(92px[^}]*width: min\(360px/);
+  assert.match(css, /#api-details \{[^}]*position: fixed;[^}]*left: calc\(64px[^}]*width: min\(360px/);
   assert.match(html, /id="api-drawer-toggle"[^>]*aria-controls="api-drawer-content"/);
   assert.match(css, /\[data-collapsed="true"\] \{[^}]*transform: translateX\(-100%\)/);
   assert.match(css, /\[data-collapsed="true"\] #api-drawer-content \{ visibility: hidden; pointer-events: none;/);
   assert.match(css, /\.api-drawer \{ transition: none;/);
-  assert.match(css, /#api-status \{[^}]*width: 44px; height: 44px/);
+  assert.match(css, /#api-status \{[^}]*width: 13px; height: 13px; min-width: 13px; min-height: 13px;/);
+  assert.match(css, /#api-drawer-toggle \{[^}]*right: -16px;[^}]*width: 16px;/);
+  assert.match(css, /#api-status\[data-state="idle"\] \.activity-dot \{ background: #47d6a0;/);
+  assert.match(css, /#api-status\[data-state="idle"\] \.activity-dot \{ box-shadow: 0 0 8px #47d6a080;/);
   assert.match(css, /\.api-tooltip \{[^}]*visibility: hidden/);
   assert.match(css, /:hover #api-status/);
   assert.match(css, /:focus-visible:not\(\[data-tooltip-dismissed="true"\]\)/);

@@ -317,21 +317,27 @@ that either app is currently deployed. The API control uses a native button,
 and Escape-to-close with focus return. It is an adjacent, non-modal disclosure;
 there is no hover timer or focus trap.
 
-The icon-only top-left API control and adjacent activity drawer also adapt the
-actual Execution Desk VPN monitor software at master-01 revision
+The compact top-left API rail copies the dashboard activity-monitor geometry
+at master-01 revision
 `1a9d13799e5c77919f08ed398c94bb19d6f45b22`:
-`local_scripts/execution_gateway/index.html:16,33,136-139` (empty native monitor
-button, tooltip/name, non-modal details and focus return), and
-`bootstrap/config/execution-interface.css:6-9,14-15,84` (fixed corner container,
-13px glowing indicator, 8px rounded frame, shadow, adjacent 360px bounded popup
-at left64px/top4px and reduced-motion rules). Cortex maps neutral colors to its
-theme tokens, honors safe-area insets, retains a 44px keyboard/touch target
-around the 13px icon, and reserves header clearance. The separate visible API
-caption sits above the icon, matching the reference's monitor label. Dynamic
-status text appears only in a hover/focus tooltip and accessible name; the
-button itself remains icon-only.
+`payload_files/dashboard/usr/share/nginx/html/media-host-status/index.html:35`
+and `styles.css:2749-2753,2796-2836` in the same directory. The copied rules
+include 4px viewport offsets, 4px/6px frame padding, a 22px minimum monitor width,
+6px label/icon gap, 9px bold letter-spaced caption, 13px circle with the original
+`#47d6a0` color and alpha glow, 8px frame radius, 1px muted teal border, shadow
+and 16px full-height chevron strip. The original theme tokens already match
+Cortex's Dark palette. Cortex includes only API, not unsupported LLM/AUTH
+monitors: fewer monitors naturally produce a shorter rail. The native icon-only
+button keeps the 13px visible geometry, with an invisible 24px pointer target;
+the handle has an invisible 8px extension without widening its visible strip.
+The separate API caption is above the circle; dynamic status text appears in
+the hover/focus tooltip and accessible name, not inside the button.
 Escape dismisses the tooltip or drawer; the close button returns focus, and
 outside clicks close without stealing focus. The drawer remains non-modal.
+Adjacent details and keyboard close/focus behavior also use the Execution Desk
+VPN monitor as functional prior art:
+`local_scripts/execution_gateway/index.html:33,136-139` and
+`bootstrap/config/execution-interface.css:9` (360px bounded panel at left64px/top4px).
 The attached chevron hide/restore surface follows
 `payload_files/dashboard/usr/share/nginx/html/media-host-status/prompt-activity.js:10-27`
 at the same reference revision: it slides the frame offscreen, leaves the handle
@@ -340,8 +346,7 @@ remembers the non-sensitive collapsed preference in
 `localStorage["cortex.api-drawer.collapsed"]`. Refresh preserves that preference.
 The drawer background or Escape within the closed-details control also hides
 it; the API button itself still opens details rather than accidentally hiding
-them through event bubbling. The handle is 24px wide instead of the reference's
-16px, and details start at 92px rather than 64px to clear the larger hit targets.
+them through event bubbling. Safe-area insets and header clearance are retained.
 Storage failures are visible and hiding/restoring still works for the page.
 Reduced motion disables both request animation and drawer sliding.
 No VPN labels, infrastructure settings, reachability checks, polling or idle

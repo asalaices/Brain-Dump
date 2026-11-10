@@ -61,6 +61,7 @@ export function bindApiStatus({
     const label = collapsed ? 'Show API activity control' : 'Hide API activity control';
     hideButton.setAttribute('aria-label', label);
     hideButton.setAttribute('title', label);
+    hideButton.querySelector('span').textContent = collapsed ? '›' : '‹';
     if (save) {
       try {
         getStorage().setItem(DRAWER_STORAGE_KEY, String(collapsed));
