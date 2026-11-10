@@ -218,6 +218,33 @@ class CortexServerTests(unittest.TestCase):
                 fixture.shutdown()
                 thread.join()
 
+    def test_module_and_stylesheet_mime_types_do_not_depend_on_host_registry(self):
+        handler = object.__new__(server.StaticHandler)
+        with patch('mimetypes.guess_type', return_value=('text/plain', None)):
+            for name, expected in (('app.mjs', 'text/javascript'), ('app.js', 'text/javascript'), ('base.css', 'text/css')):
+                self.assertEqual(handler.guess_type(name), expected)
+
+    def test_connection_refusal_waits_for_windows_tcp_retry_without_pid_signals(self):
+        path, state = self.write_state()
+
+        def refused(_request, *, timeout):
+            self.assertGreaterEqual(timeout, 3)
+            raise URLError(ConnectionRefusedError('fixture connection refused'))
+
+        with patch.object(server, 'build_opener') as opener:
+            opener.return_value.open.side_effect = refused
+            self.assertFalse(server.control(state))
+
+        def closed(_address, *, timeout):
+            self.assertGreaterEqual(timeout, 3)
+            raise ConnectionRefusedError('fixture listener closed')
+
+        with patch.object(server, 'control', return_value=True), patch.object(server.socket, 'create_connection', side_effect=closed), patch.object(server.os, 'kill', side_effect=AssertionError('No PID signals')):
+            result, code = server.operate('stop', self.runtime, 0)
+        self.assertEqual(code, 0)
+        self.assertEqual(result['status'], 'stopped')
+        self.assertFalse(path.exists())
+
     def test_port_collision_is_an_error_and_leaves_no_state_or_stranded_worker(self):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))

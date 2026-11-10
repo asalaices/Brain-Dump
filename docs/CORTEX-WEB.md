@@ -104,6 +104,10 @@ button disclosure, theme storage failures and a temporary loopback HTTP fixture.
 No reference app or private backend is needed.
 The Python CI matrix explicitly runs lifecycle coverage on Linux, macOS and
 Windows with Python 3.11/3.14 before the full suite, which also discovers it.
+The full-suite runner explicitly imports checkout source; subsequent installed
+artifact checks remain separate. JavaScript/CSS MIME types are explicit rather
+than inherited from OS registry guesses, and connection-refusal checks allow
+Windows TCP retry timing without treating timeouts as a successful shutdown.
 Lifecycle fixtures cover real start/readiness/stop/restart, concurrency,
 idempotency, stale live PIDs, foreign listeners, redirects, invalid/oversized
 state or identity, busy ports, startup failure/timeout, private paths, static

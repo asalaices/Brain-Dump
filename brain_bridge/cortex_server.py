@@ -77,7 +77,7 @@ def control(state, stop=False):
         headers={'X-Cortex-Control': state['token']}
     )
     try:
-        with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=.5) as response:
+        with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=TIMEOUT) as response:
             if stop:
                 if response.status != 204:
                     raise ValueError('Cortex shutdown was not acknowledged.')
@@ -101,6 +101,11 @@ def control(state, stop=False):
 
 
 class StaticHandler(SimpleHTTPRequestHandler):
+    extensions_map = {
+        **SimpleHTTPRequestHandler.extensions_map,
+        '.mjs': 'text/javascript', '.js': 'text/javascript', '.css': 'text/css'
+    }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB), **kwargs)
 
@@ -266,7 +271,7 @@ def operate(action, runtime, port):
                 deadline = time.monotonic() + TIMEOUT
                 while True:
                     try:
-                        with socket.create_connection(('127.0.0.1', state['port']), timeout=.2):
+                        with socket.create_connection(('127.0.0.1', state['port']), timeout=TIMEOUT):
                             pass
                     except ConnectionRefusedError:
                         break
