@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {HttpError} from '../api/client.mjs';
-import {citationUrl, createSynapsesClient} from '../api/synapses.mjs';
-import {receiveLaunch} from '../api/bootstrap.mjs';
+import {BrowserSessionError, citationUrl, createSynapsesClient} from '../api/synapses.mjs';
 
 export function renderMatches(documentTarget, target, receipt) {
   target.replaceChildren();
@@ -25,7 +24,8 @@ export function renderMatches(documentTarget, target, receipt) {
 export function bindSynapses({
   activity, documentTarget, getOrigin = () => window.location.origin,
   fetchImpl = (...args) => globalThis.fetch(...args),
-  windowTarget = globalThis.window, getStorage = () => windowTarget.localStorage
+  windowTarget = globalThis.window, getStorage = () => windowTarget.localStorage,
+  getSessionStorage = () => windowTarget.sessionStorage
 }) {
   const select = id => documentTarget.querySelector(`#${id}`);
   const connect = select('synapses-connect');
@@ -34,78 +34,80 @@ export function bindSynapses({
   const query = select('synapses-query');
   const submit = select('synapses-search');
   const notice = select('synapses-notice');
-  const pairing = select('synapses-pairing');
   const source = select('synapses-source');
   const results = select('synapses-results');
   const brain = select('synapses-brain');
   const brainControl = select('synapses-brain-control');
   const preference = select('synapses-preference');
-  let client;
+  const client = createSynapsesClient({origin: getOrigin(), activity, fetchImpl, getSessionStorage});
   let controller;
   let expires;
   let generation = 0;
-  let paired = false;
-  let trusted = false;
-
-  function remember(preserveNotice = false) {
-    try {
-      getStorage().setItem('cortex.source', brain.value);
-      if (preserveNotice !== true) preference.textContent = '';
-    } catch {
-      preference.textContent = 'Source preference storage is unavailable. Selection lasts only for this page.';
-    }
-  }
-
-  function trust(receipt) {
-    trusted = true;
-    brain.replaceChildren();
-    for (const alias of receipt.sources) {
-      const option = documentTarget.createElement('option');
-      option.value = alias;
-      option.textContent = alias;
-      brain.append(option);
-    }
-    brain.value = receipt.sources[0];
-    try {
-      const saved = getStorage().getItem('cortex.source');
-      if (receipt.sources.includes(saved)) brain.value = saved;
-      else if (saved !== null) preference.textContent = 'Previously selected Brain is not configured in this launcher.';
-    } catch {
-      preference.textContent = 'Source preference storage is unavailable. Selection lasts only for this page.';
-    }
-    clearTimeout(expires);
-    expires = setTimeout(() => {
-      trusted = false;
-      forget();
-      notice.textContent = 'Connection expired. Click Connect to Brain to reconnect; displayed private data was cleared.';
-    }, receipt.expires_in_seconds * 1000);
-    notice.textContent = 'Approval received. Checking existing access to your configured Brain...';
-    controls();
-  }
+  let connected = false;
+  let localSession = false;
 
   function clear() {
     source.textContent = '';
     results.replaceChildren();
-    pairing.textContent = '';
   }
 
   function controls(busy = false) {
     connect.disabled = busy;
-    brainControl.hidden = !trusted;
-    brain.disabled = busy || !trusted || paired;
-    submit.disabled = busy || !paired;
-    form.hidden = !paired;
-    disconnect.hidden = !trusted;
+    brainControl.hidden = !localSession;
+    brain.disabled = true;
+    submit.disabled = busy || !connected;
+    form.hidden = !connected;
+    disconnect.hidden = !localSession;
   }
 
   function forget() {
     generation += 1;
     controller?.abort();
-    paired = false;
+    clearTimeout(expires);
+    connected = false;
+    localSession = false;
     clear();
     query.value = '';
     connect.textContent = 'Connect to Brain';
     controls();
+  }
+
+  function dropSession() {
+    forget();
+    try {
+      client.clearSession();
+      return '';
+    } catch {
+      return ' Browser session storage could not be cleared; close this tab and check site storage settings.';
+    }
+  }
+
+  function session(receipt) {
+    localSession = true;
+    brain.replaceChildren();
+    const option = documentTarget.createElement('option');
+    option.value = receipt.sources[0];
+    option.textContent = receipt.sources[0];
+    brain.append(option);
+    brain.value = receipt.sources[0];
+    clearTimeout(expires);
+    expires = setTimeout(() => {
+      const storageError = dropSession();
+      notice.textContent = 'Connection expired. Click Connect to Brain to reconnect; displayed private data was cleared.' + storageError;
+    }, receipt.expires_in_seconds * 1000);
+    notice.textContent = 'Checking existing access to your configured Brain...';
+    controls(true);
+  }
+
+  function remember() {
+    try {
+      const previous = getStorage().getItem('cortex.source');
+      preference.textContent = previous !== null && previous !== brain.value ?
+        'The previous Brain is not configured; connected to the server-selected Brain shown above.' : '';
+      getStorage().setItem('cortex.source', brain.value);
+    } catch {
+      preference.textContent = 'Source preference storage is unavailable. The connection is unaffected.';
+    }
   }
 
   function describeSource(receipt) {
@@ -120,35 +122,26 @@ export function bindSynapses({
     controller?.abort();
     const active = new AbortController();
     controller = active;
-    const signal = active.signal;
     const current = ++generation;
     const timeout = setTimeout(() => active.abort(), 90000);
     clear();
     controls(true);
     notice.textContent = 'Waiting for the local read-only connection...';
     try {
-      client ??= createSynapsesClient({origin: getOrigin(), activity, fetchImpl});
-      const receipt = await client.request(operation, body, signal);
+      const receipt = await client.request(operation, body, active.signal);
       if (current !== generation) return;
-      if (receipt.status === 'launch_requested') {
-        notice.textContent = 'Your browser is opening a private approval page. Click Approve connection there; Cortex connects automatically in a new tab. This original tab remains disconnected.';
-      } else if (receipt.status === 'pairing_required') {
-        paired = false;
-        trusted = false;
-        notice.textContent = 'Connection needs approval. Click Connect to Brain. Existing Brain access remains required.';
-      } else if (receipt.status === 'paired') {
-        trust(receipt);
-        controls(true);
-        const status = await client.request('status', {}, signal);
+      if (receipt.status === 'connected') {
+        session(receipt);
+        const status = await client.request('status', {}, active.signal);
         if (current !== generation) return;
-        paired = true;
+        connected = true;
         connect.textContent = 'Refresh source status';
-        remember(true);
+        remember();
         describeSource(status);
         notice.textContent = `Connected read-only. ${status.count} entries in the authorized source.`;
       } else if (receipt.status === 'disconnected') {
-        forget();
-        notice.textContent = 'Disconnected. Local browser access revoked and displayed results cleared.';
+        const storageError = dropSession();
+        notice.textContent = 'Disconnected. Browser access revoked and displayed data cleared.' + storageError;
       } else {
         describeSource(receipt);
         if (receipt.status === 'ready') {
@@ -163,74 +156,54 @@ export function bindSynapses({
       if (current !== generation) return;
       clear();
       if (error instanceof HttpError && error.status === 401) {
-        trusted = false;
-        forget();
-        notice.textContent = 'Connection expired or revoked. Click Connect to Brain to reconnect.';
+        const storageError = dropSession();
+        notice.textContent = 'Connection expired or revoked. Click Connect to Brain to reconnect.' + storageError;
       } else {
-        const message = error instanceof HttpError && operation === 'launch' ?
-          (error.status === 429 ?
-            'An approval page is already waiting. Use that page, or retry Connect to Brain after one minute.' :
-            'Cortex could not open its approval page. The local server needs a configured Brain and an available desktop browser. Retry Connect to Brain after resolving that problem.') :
+        notice.textContent = error instanceof BrowserSessionError ? error.message :
           error instanceof HttpError ? ({
-          403: 'Source access denied or reader not synchronized. No current results are shown.',
-          429: 'Local connection busy. Retry when the current request finishes.',
-          503: 'Local connection unavailable. Check its external profile and source authority.',
-          502: 'Authorized source read failed. No current results are shown.'
-        }[error.status] ?? `Local request failed (HTTP ${error.status}).`) :
-          signal.aborted ? 'Browser request canceled or timed out; a server-side read may still finish.' :
-            'Local connection or response validation failed. No current results are shown.';
-        notice.textContent = message;
+            403: 'Source access denied or reader not synchronized. No current results are shown.',
+            429: 'Local connection busy. Retry when the current request finishes.',
+            503: 'Local connection unavailable. Check its external profile and source authority.',
+            502: 'Authorized source read failed. No current results are shown.'
+          }[error.status] ?? `Local request failed (HTTP ${error.status}).`) :
+            active.signal.aborted ? 'Browser request canceled or timed out; a server-side read may still finish.' :
+              'Local connection or response validation failed. No current results are shown.';
       }
     } finally {
       clearTimeout(timeout);
-      if (current === generation) controls();
+      if (current === generation) {
+        if (operation === 'disconnect') {
+          const storageError = dropSession();
+          notice.textContent += ' Local access cleared; server revocation was not confirmed.' + storageError;
+        } else controls();
+      }
     }
   }
 
-  const onConnect = () => trusted ?
-    run(paired ? 'status' : 'session', paired ? {} : {source: brain.value}) : run('launch');
+  const onConnect = () => run(connected ? 'status' : 'session');
   const onDisconnect = () => {
-    // Disconnect read access, not the fixed-lifetime trust established by native launch.
-    generation += 1;
-    controller?.abort();
-    paired = false;
-    clear();
+    connected = false;
     query.value = '';
-    connect.textContent = 'Connect to Brain';
     return run('disconnect');
   };
   const onSubmit = event => {
     event.preventDefault();
-    if (paired && query.value.trim()) return run('synapse', {query: query.value.trim()});
+    if (connected && query.value.trim()) return run('synapse', {query: query.value.trim()});
   };
   connect.addEventListener('click', onConnect);
   disconnect.addEventListener('click', onDisconnect);
   form.addEventListener('submit', onSubmit);
-  brain.addEventListener('change', remember);
-  let disposeLaunch = () => {};
-  if (windowTarget?.opener) {
-    client = createSynapsesClient({origin: getOrigin(), activity, fetchImpl});
-    disposeLaunch = receiveLaunch({
-      windowTarget, client, onReady: receipt => {
-        trust(receipt);
-        return run('session', {source: brain.value});
-      },
-      onError: () => {
-        notice.textContent = 'Approval expired or failed. Click Connect to Brain to retry. No access grant was changed.';
-        controls();
-      }
-    });
-  }
   controls();
+  try {
+    if (client.hasSession()) void run('resume');
+  } catch (error) {
+    notice.textContent = error.message;
+  }
   return () => {
-    disposeLaunch();
-    clearTimeout(expires);
     connect.removeEventListener('click', onConnect);
     disconnect.removeEventListener('click', onDisconnect);
     form.removeEventListener('submit', onSubmit);
-    brain.removeEventListener('change', remember);
+    // Keep the origin-scoped CSRF state for a normal page refresh, not private results.
     forget();
-    connect.disabled = true;
-    disconnect.disabled = true;
   };
 }

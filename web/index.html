@@ -41,14 +41,13 @@
         authority. This is not a shared service, source grant or complete Cortex application.</p>
       <div class="controls">
         <label id="synapses-brain-control" for="synapses-brain" hidden>Configured Brain
-          <select id="synapses-brain" disabled><option value="">Awaiting approval</option></select>
+          <select id="synapses-brain" disabled><option value="">Not connected</option></select>
         </label>
         <button id="synapses-connect" type="button">Connect to Brain</button>
         <button id="synapses-disconnect" type="button" hidden>Disconnect</button>
       </div>
-      <p id="synapses-notice" class="notice" role="status">Not connected. Click Connect to Brain, then approve the connection on the private page your browser opens. Cortex connects automatically; no terminal command is needed.</p>
+      <p id="synapses-notice" class="notice" role="status">Not connected. Click Connect to Brain. Your connection stays in this page and survives refresh.</p>
       <p id="synapses-preference" role="status"></p>
-      <p id="synapses-pairing"></p>
       <p id="synapses-source"></p>
       <form id="synapses-form" hidden>
         <label for="synapses-query">Recall from the authorized source

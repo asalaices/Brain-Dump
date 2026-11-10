@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 Creative Software Development
-"""Synthetic local pairing/HTTP fixtures; never consult a live private source."""
+"""Synthetic loopback session/HTTP fixtures; never consult a live private source."""
 from http.client import HTTPConnection
 from io import BytesIO
 import json
 import os
 from pathlib import Path
-import re
-import socket
 import subprocess
 import sys
 import tempfile
@@ -39,12 +37,10 @@ class LocalSynapsesTests(unittest.TestCase):
         self.http = server.CortexHTTPServer(('127.0.0.1', 0), server.StaticHandler)
         self.http.daemon_threads = True
         self.http.synapses = self.app
-        self.temporary = tempfile.TemporaryDirectory(prefix='cortex-launch-test-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='cortex-session-test-')
         self.addCleanup(self.temporary.cleanup)
         self.runtime = Path(self.temporary.name).resolve()
         self.runtime.chmod(0o700)
-        self.http.runtime = self.runtime
-        self.addCleanup(self.app.cancel_launch)
         self.state = {
             'schema_version': 1, 'pid': os.getpid(), 'instance': '1' * 32, 'token': '2' * 64,
             'host': '127.0.0.1', 'port': self.http.server_port, 'root': str(server.ROOT)
@@ -69,283 +65,143 @@ class LocalSynapsesTests(unittest.TestCase):
         response = connection.getresponse()
         return response.status, json.loads(response.read()), dict(response.getheaders())
 
-    def pending(self):
+    def connected(self):
         code, result, headers = self.post('session')
-        self.assertEqual(code, 200)
-        self.assertEqual(result['status'], 'pairing_required')
-        self.assertNotIn('token', result)
-        return result['pairing_id'], headers['Set-Cookie'].split(';')[0]
-
-    def paired(self):
-        request_id, cookie = self.pending()
-        server.control(self.state, pair=request_id)
-        return cookie
-
-    def bootstrap(self):
-        result = server.control(self.state, launch='issue')
-        path = Path(result['launch_file'])
-        html = path.read_text()
-        credential = re.search(r'let credential = "([a-f0-9]{64})";', html).group(1)
-        self.assertNotIn(credential, json.dumps(result))
-        return credential, path, html
-
-    def trusted(self):
-        credential, path, _ = self.bootstrap()
-        code, result, headers = self.post('bootstrap', {'credential': credential})
-        self.assertEqual((code, result['status']), (200, 'trusted'))
-        self.assertFalse(path.exists())
+        self.assertEqual((code, result['status']), (200, 'connected'))
         self.assertEqual(result['sources'], ['example'])
+        self.assertNotIn('token', result)
+        self.assertNotIn('key', result)
         return headers['Set-Cookie'].split(';')[0]
 
-    def test_native_launch_uses_private_file_not_credential_url_and_cleans_on_redemption(self):
+    def test_in_page_connect_resume_status_and_disconnect_need_no_launcher(self):
+        cookie = self.connected()
+        self.status.assert_not_called()
+        code, result, headers = self.post('resume', cookie=cookie)
+        self.assertEqual((code, result['status']), (200, 'connected'))
+        self.assertNotIn('Set-Cookie', headers)
+        code, result, headers = self.post('status', cookie=cookie)
+        self.assertEqual((code, result['source']), (200, SOURCE))
+        self.status.assert_called_once_with(**PARAMETERS)
+        self.assertFalse(result['cache_fresh'])
+        self.assertIn('no-store', headers['Cache-Control'])
+        self.assertIn("frame-ancestors 'none'", headers['Content-Security-Policy'])
+        self.assertEqual(headers['Referrer-Policy'], 'no-referrer')
+        self.assertNotIn('Access-Control-Allow-Origin', headers)
+        code, result, headers = self.post('disconnect', cookie=cookie)
+        self.assertEqual((code, result['status']), (200, 'disconnected'))
+        self.assertIn('Max-Age=0', headers['Set-Cookie'])
+        for operation in ('resume', 'status', 'disconnect'):
+            self.assertEqual(self.post(operation, cookie=cookie)[0], 401)
+        self.assertEqual(self.app.sessions, {})
+        self.assertEqual(list(self.runtime.glob('launch-*.html')), [])
+
+    def test_cookie_is_private_port_named_and_never_appears_in_json(self):
+        _, result, headers = self.post('session')
+        cookie = headers['Set-Cookie']
+        self.assertTrue(cookie.startswith(f'cortex_local_{self.http.server_port}='))
+        for attribute in ('HttpOnly', 'SameSite=Strict', 'Path=/api/local/', 'Max-Age=1800'):
+            self.assertIn(attribute, cookie)
+        self.assertNotIn(cookie.split(';')[0].split('=')[1], json.dumps(result))
+
+    def test_refresh_cannot_extend_fixed_expiry_and_old_cookie_cannot_be_replayed(self):
+        now = [0]
+        self.app.clock = lambda: now[0]
+        cookie = self.connected()
+        now[0] = 900
+        code, receipt, headers = self.post('resume', cookie=cookie)
+        self.assertEqual((code, receipt['expires_in_seconds']), (200, 900))
+        self.assertNotIn('Set-Cookie', headers)
+        now[0] = 1800
+        for operation in ('resume', 'status'):
+            self.assertEqual(self.post(operation, cookie=cookie)[0], 401)
+        self.assertEqual(self.app.sessions, {})
+        self.status.assert_not_called()
+
+    def test_connect_rotates_injected_or_existing_ids_and_invalidates_old_session(self):
+        cookie = self.connected()
+        for _ in range(12):
+            code, result, headers = self.post('session', cookie=cookie, headers={'X-Cortex-Browser': '4' * 64})
+            self.assertEqual((code, result['status']), (200, 'connected'))
+            new_cookie = headers['Set-Cookie'].split(';')[0]
+            self.assertNotEqual(new_cookie, cookie)
+            self.assertEqual(self.post('resume', cookie=cookie)[0], 401)
+            cookie = new_cookie
+            self.assertEqual(len(self.app.sessions), 1)
+        injected = f'cortex_local_{self.http.server_port}=' + '0' * 64
+        code, _, headers = self.post('session', cookie=injected)
+        self.assertEqual(code, 200)
+        self.assertNotEqual(headers['Set-Cookie'].split(';')[0], injected)
+        self.assertEqual(self.post('status', cookie=injected)[0], 401)
+
+    def test_cross_port_stolen_or_injected_cookie_without_origin_csrf_key_is_insufficient(self):
+        cookie = self.connected()
+        foreign = {'X-Cortex-Browser': '4' * 64}
+        for operation in ('resume', 'status', 'disconnect'):
+            code, _, headers = self.post(operation, cookie=cookie, headers=foreign)
+            self.assertEqual(code, 401)
+            self.assertNotIn('Set-Cookie', headers)
+        self.status.assert_not_called()
+        self.assertEqual(self.post('status', cookie=cookie)[0], 200)
+        wrong_name = cookie.replace(str(self.http.server_port), '1', 1)
+        self.assertEqual(self.post('resume', cookie=wrong_name)[0], 401)
+        self.assertEqual(self.post('resume', cookie='malformed; =')[0], 401)
+
+    def test_origin_host_custom_headers_forms_and_cross_port_requests_reject_before_sessions(self):
+        for fields in (
+            {'Origin': 'http://example.invalid'}, {'Origin': ''}, {'Origin': 'null'},
+            {'Origin': f'http://127.0.0.1:{self.http.server_port + 1}'},
+            {'Origin': f'http://localhost:{self.http.server_port}'},
+            {'Host': 'example.invalid'}, {'Host': f'localhost:{self.http.server_port}'},
+            {'X-Cortex-Read-Only': ''}, {'X-Cortex-Browser': ''}, {'X-Cortex-Browser': 'bad'}
+        ):
+            for operation in ('session', 'resume', 'disconnect', 'status'):
+                with self.subTest(fields=fields, operation=operation):
+                    self.assertEqual(self.post(operation, headers=fields)[0], 403)
+        for content_type in ('text/plain', 'application/x-www-form-urlencoded', 'multipart/form-data'):
+            self.assertEqual(self.post('session', headers={'Content-Type': content_type})[0], 400)
+        self.assertEqual(self.app.sessions, {})
+        self.status.assert_not_called()
+        self.synapse.assert_not_called()
+
+    def test_navigation_preflight_and_retired_routes_cannot_establish_sessions(self):
+        for method in ('GET', 'OPTIONS'):
+            connection = HTTPConnection('127.0.0.1', self.http.server_port, timeout=3)
+            self.addCleanup(connection.close)
+            connection.request(method, local.PREFIX + 'session', headers={
+                'Origin': 'http://127.0.0.1:9999', 'Access-Control-Request-Method': 'POST',
+                'Access-Control-Request-Headers': 'content-type,x-cortex-browser,x-cortex-read-only'})
+            response = connection.getresponse()
+            self.assertIn(response.status, (404, 501))
+            self.assertIsNone(response.getheader('Set-Cookie'))
+            self.assertIsNone(response.getheader('Access-Control-Allow-Origin'))
+            response.read()
+        for endpoint in ('launch', 'bootstrap', 'export', 'status?source=other'):
+            self.assertEqual(self.post(endpoint)[0], 404)
+        for path in ('/_cortex/open', '/_cortex/pair'):
+            connection = HTTPConnection('127.0.0.1', self.http.server_port, timeout=3)
+            self.addCleanup(connection.close)
+            connection.request('POST', path, body=b'{}')
+            response = connection.getresponse()
+            self.assertEqual(response.status, 404)
+            response.read()
+        self.assertEqual(self.app.sessions, {})
+
+    def test_optional_open_opens_only_ordinary_url_without_files_or_authorization(self):
         (self.runtime / 'state.json').write_text(json.dumps(self.state))
         (self.runtime / 'state.json').chmod(0o600)
         with patch.object(server.webbrowser, 'open', return_value=True) as opened:
             result, code = server.operate('open', self.runtime, 8080)
         self.assertEqual(code, 0)
-        self.assertEqual(result['browser'], 'launch_requested')
+        opened.assert_called_once_with(f'http://127.0.0.1:{self.http.server_port}/', new=2)
         self.assertNotIn('launch_file', result)
-        uri = opened.call_args.args[0]
-        self.assertTrue(uri.startswith(self.runtime.as_uri()))
-        self.assertTrue(uri.endswith('.html'))
-        self.assertNotIn('?', uri)
-        self.assertNotIn('#', uri)
-        path = next(self.runtime.glob('launch-*.html'))
-        raw = path.read_text()
-        credential = re.search(r'let credential = "([a-f0-9]{64})";', raw).group(1)
-        self.assertNotIn(credential, uri + json.dumps(result))
-        self.assertIn('content="no-referrer"', raw)
-        self.assertIn("child.postMessage({type: 'cortex-bootstrap', credential}, origin)", raw)
-        self.assertNotIn('localStorage', raw)
-        self.assertNotIn('location.hash', raw)
-        if os.name != 'nt':
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(self.post('bootstrap', {'credential': credential})[0], 200)
-        self.assertFalse(path.exists())
-
-    def test_approval_names_exact_source_and_origin_as_text_and_provides_return_navigation(self):
-        self.app.profile['source'] = '<script>synthetic</script>'
-        _, _, html = self.bootstrap()
-        self.assertIn('&lt;script&gt;synthetic&lt;/script&gt;', html)
-        self.assertNotIn('<script>synthetic</script>', html)
-        self.assertIn(f'href="http://127.0.0.1:{self.http.server_port}/"', html)
-        self.assertIn('Approve connection', html)
-        self.assertIn('Back to Cortex', html)
-
-    def test_browser_launch_intent_opens_approval_but_cannot_authorize_its_caller(self):
-        with patch.object(server.webbrowser, 'open', return_value=True) as opened:
-            code, result, headers = self.post('launch')
-            self.assertEqual((code, result), (202, {'schema_version': 1, 'status': 'launch_requested'}))
-            self.assertNotIn('Set-Cookie', headers)
-            self.assertEqual(self.app.sessions, {})
-            path = next(self.runtime.glob('launch-*.html'))
-            self.assertEqual(opened.call_args.args[0], path.as_uri())
-            self.assertEqual(self.post('launch')[0], 429)
-            self.assertEqual(opened.call_count, 1)
-            self.assertTrue(path.exists())
-        self.assertEqual(self.post('session', {'source': 'example'})[0], 401)
-        self.assertEqual(self.post('status')[0], 401)
-        credential = re.search(r'let credential = "([a-f0-9]{64})";', path.read_text()).group(1)
-        self.assertNotIn(credential, json.dumps(result))
-        code, _, headers = self.post('bootstrap', {'credential': credential},
-                                     headers={'X-Cortex-Browser': '4' * 64})
-        self.assertEqual(code, 200)
-        cookie = headers['Set-Cookie'].split(';')[0]
-        self.assertEqual(self.post('session', {'source': 'example'}, cookie)[0], 401)
-        self.assertEqual(self.post('session', {'source': 'example'}, cookie,
-                                   headers={'X-Cortex-Browser': '4' * 64})[0], 200)
-        self.status.assert_not_called()
-        self.synapse.assert_not_called()
-
-    def test_browser_launch_rejects_untrusted_origins_paths_and_unconfigured_runtime(self):
-        with patch.object(server.webbrowser, 'open', return_value=True) as opened:
-            for fields in ({'Origin': 'http://example.invalid'}, {'Origin': 'null'},
-                           {'Origin': 'http://127.0.0.1:9999'}, {'Host': 'example.invalid'},
-                           {'X-Cortex-Browser': ''}):
-                self.assertEqual(self.post('launch', headers=fields)[0], 403)
-            for body in ({'path': '/synthetic'}, {'source': 'other'}, {'browser_id': '3' * 64}):
-                self.assertEqual(self.post('launch', body)[0], 400)
-            self.app.profile = None
-            self.assertEqual(self.post('launch')[0], 503)
-            self.app.profile = dict(PROFILE)
-            self.http.runtime = None
-            with self.assertLogs(local.LOG, level='WARNING'):
-                self.assertEqual(self.post('launch')[0], 503)
-            opened.assert_not_called()
-        self.assertEqual(list(self.runtime.glob('launch-*.html')), [])
         self.assertEqual(self.app.sessions, {})
-
-    def test_browser_launch_failure_cleans_its_own_approval_without_leaking_details(self):
-        for error in (False, OSError('synthetic private native details')):
-            with patch.object(server.webbrowser, 'open', side_effect=error if isinstance(error, Exception) else None,
-                              return_value=error), self.assertLogs(local.LOG, level='WARNING') as logs:
-                code, result, _ = self.post('launch')
-            self.assertEqual((code, result['status']), (503, 'launch_unavailable'))
-            self.assertNotIn('synthetic private', json.dumps(result) + ''.join(logs.output))
-            self.assertIsNone(self.app.bootstrap)
-            self.assertEqual(list(self.runtime.glob('launch-*.html')), [])
-        def replaced(*args, **kwargs):
-            self.app.launch(self.runtime, f'http://127.0.0.1:{self.http.server_port}')
-            raise OSError('synthetic late native error')
-        with patch.object(server.webbrowser, 'open', side_effect=replaced), self.assertLogs(local.LOG, level='WARNING'):
-            self.assertEqual(self.post('launch')[0], 503)
-        self.assertIsNotNone(self.app.bootstrap)
-        self.assertEqual(len(list(self.runtime.glob('launch-*.html'))), 1)
-        self.status.assert_not_called()
-
-    def test_native_launch_failure_cancels_bootstrap_and_leaves_server_running(self):
-        (self.runtime / 'state.json').write_text(json.dumps(self.state))
-        (self.runtime / 'state.json').chmod(0o600)
+        self.assertEqual(list(self.runtime.glob('launch-*.html')), [])
         for error in (False, OSError('synthetic native failure')):
             with patch.object(server.webbrowser, 'open', side_effect=error if isinstance(error, Exception) else None,
                               return_value=error):
                 with self.assertRaises((ValueError, OSError)):
                     server.operate('open', self.runtime, 8080)
-            self.assertEqual(list(self.runtime.glob('launch-*.html')), [])
-            self.assertIsNone(self.app.bootstrap)
             self.assertTrue(server.control(self.state))
-
-    def test_bootstrap_wrong_origin_host_key_and_replay_cannot_read_or_consume_valid_launch(self):
-        credential, path, _ = self.bootstrap()
-        for fields in ({'Origin': 'null'}, {'Origin': 'http://127.0.0.1:9999'},
-                       {'Host': 'example.invalid'}, {'X-Cortex-Browser': ''}):
-            self.assertEqual(self.post('bootstrap', {'credential': credential}, headers=fields)[0], 403)
-            self.assertTrue(path.exists())
-        self.assertEqual(self.post('bootstrap', {'credential': '0' * 64})[0], 401)
-        self.assertTrue(path.exists())
-        code, result, headers = self.post('bootstrap', {'credential': credential})
-        self.assertEqual(code, 200)
-        self.assertEqual(result['status'], 'trusted')
-        cookie = headers['Set-Cookie'].split(';')[0]
-        self.assertEqual(self.post('bootstrap', {'credential': credential})[0], 401)
-        self.assertEqual(self.post('status', cookie=cookie)[0], 401)
-        self.assertEqual(self.post('session', {'source': 'example'}, cookie,
-                                   headers={'X-Cortex-Browser': '4' * 64})[0], 401)
-        self.status.assert_not_called()
-
-    def test_bootstrap_expiry_replacement_and_timer_race_preserve_new_launch(self):
-        now = [0]
-        self.app.clock = lambda: now[0]
-        old, path, _ = self.bootstrap()
-        latest, second, _ = self.bootstrap()
-        self.assertFalse(path.exists())
-        self.app.cancel_launch(old)
-        self.assertTrue(second.exists())
-        self.assertEqual(self.post('bootstrap', {'credential': old})[0], 401)
-        now[0] = 61
-        self.assertEqual(self.post('bootstrap', {'credential': latest})[0], 401)
-        self.assertFalse(second.exists())
-        self.assertIsNone(self.app.bootstrap)
-
-    def test_bootstrap_atomic_single_use_even_under_concurrent_redemption(self):
-        credential, path, _ = self.bootstrap()
-        barrier = threading.Barrier(3)
-        results = []
-        def redeem(key):
-            barrier.wait(timeout=3)
-            results.append(self.app.redeem(credential, key))
-        threads = [threading.Thread(target=redeem, args=(digit * 64,)) for digit in ('3', '4')]
-        for thread in threads:
-            thread.start()
-        barrier.wait(timeout=3)
-        for thread in threads:
-            thread.join(timeout=3)
-            self.assertFalse(thread.is_alive())
-        self.assertEqual(sum(token is not None for token, _ in results), 1)
-        self.assertFalse(path.exists())
-
-    def test_configured_source_only_connect_disconnect_and_reconnect_still_reauthorize(self):
-        cookie = self.trusted()
-        for source in ('other', '/private/path', 'https://other.invalid'):
-            self.assertEqual(self.post('session', {'source': source}, cookie)[0], 403)
-        self.status.assert_not_called()
-        self.assertEqual(self.post('session', {'source': 'example'}, cookie)[1]['status'], 'paired')
-        self.assertEqual(self.post('status', cookie=cookie)[0], 200)
-        self.assertEqual(self.post('disconnect', cookie=cookie)[0], 200)
-        self.assertEqual(self.post('status', cookie=cookie)[0], 401)
-        self.assertEqual(self.post('session', {'source': 'example'}, cookie)[0], 200)
-        self.status.side_effect = AccessDenied('private source revoked')
-        with self.assertLogs(local.LOG, level='WARNING'):
-            self.assertEqual(self.post('status', cookie=cookie)[0], 403)
-        self.assertEqual(self.status.call_count, 2)
-
-    def test_cleanup_never_deletes_replacement_or_foreign_content(self):
-        _, path, _ = self.bootstrap()
-        path.write_text('foreign replacement')
-        self.app.cancel_launch()
-        self.assertEqual(path.read_text(), 'foreign replacement')
-
-    def test_unconfigured_bootstrap_and_untrusted_native_control_fail_closed(self):
-        self.app.profile = None
-        with self.assertRaises(ValueError):
-            server.control(self.state, launch='issue')
-        self.assertEqual(list(self.runtime.glob('launch-*.html')), [])
-        self.app.profile = PROFILE
-        for body in ({}, {'credential': 'bad'}, {'credential': 'a' * 64, 'source_repo': '/other'}):
-            self.assertEqual(self.post('bootstrap', body)[0], 400)
-
-    def test_owner_control_pairs_only_selected_browser_and_cookie_is_private(self):
-        first_id, first = self.pending()
-        second_id, second = self.pending()
-        code, body, _ = self.post('status', cookie=first)
-        self.assertEqual((code, body['status']), (401, 'pairing_required'))
-        self.status.assert_not_called()
-        self.assertEqual(server.control(self.state, pair=first_id)['status'], 'paired')
-        self.assertTrue(server.control(self.state))
-        self.assertEqual(self.post('session', cookie=first)[1]['status'], 'paired')
-        self.assertEqual(self.post('status', cookie=second)[0], 401)
-        with self.assertRaises(ValueError):
-            server.control(self.state, pair=second_id)
-        code, result, headers = self.post('status', cookie=first)
-        self.assertEqual(code, 200)
-        self.assertFalse(result['cache_fresh'])
-        self.assertEqual(result['source'], SOURCE)
-        self.status.assert_called_once_with(**PARAMETERS)
-        self.assertIn('no-store', headers['Cache-Control'])
-        self.assertIn("frame-ancestors 'none'", headers['Content-Security-Policy'])
-        _, _, cookie_headers = self.post('session')
-        for attribute in ('HttpOnly', 'SameSite=Strict', 'Path=/api/local/'):
-            self.assertIn(attribute, cookie_headers['Set-Cookie'])
-        self.assertNotIn('token', json.dumps(result))
-
-    def test_pairing_an_old_worker_cannot_be_interpreted_as_shutdown(self):
-        class LegacyHandler(server.StaticHandler):
-            def do_POST(self):
-                if self.path == server.CONTROL:
-                    self.server.unexpected_stop = True
-                    return super().do_POST()
-                self.send_error(404)
-        self.http.RequestHandlerClass = LegacyHandler
-        self.http.unexpected_stop = False
-        with self.assertRaisesRegex(ValueError, 'server version'):
-            server.control(self.state, pair='a' * 32)
-        self.assertFalse(self.http.unexpected_stop)
-        self.assertTrue(server.control(self.state))
-
-    def test_worker_exit_before_pairing_is_an_error_not_a_false_success(self):
-        with socket.socket() as sock:
-            sock.bind(('127.0.0.1', 0))
-            port = sock.getsockname()[1]
-        stopped = {**self.state, 'port': port}
-        self.assertFalse(server.control(stopped))
-        with self.assertRaisesRegex(ValueError, 'no pairing was confirmed'):
-            server.control(stopped, pair='a' * 32)
-
-    def test_pairing_via_real_cli_uses_private_control_without_printing_credentials(self):
-        request_id, cookie = self.pending()
-        with tempfile.TemporaryDirectory() as temporary:
-            runtime = Path(temporary).resolve() / 'runtime'
-            runtime.mkdir(mode=0o700)
-            path = runtime / 'state.json'
-            path.write_text(json.dumps(self.state))
-            path.chmod(0o600)
-            process = subprocess.run(
-                [sys.executable, str(server.ROOT / 'cortex_server'), '--pair', request_id,
-                 '--runtime-dir', str(runtime)], capture_output=True, text=True, timeout=10)
-            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
-            self.assertEqual(json.loads(process.stdout)['status'], 'paired')
-            self.assertNotIn(self.state['token'], process.stdout + process.stderr)
-        self.assertEqual(self.post('status', cookie=cookie)[0], 200)
 
     def test_rejection_consumes_only_bounded_body_before_reply_without_authorizing(self):
         fields = {'Content-Length': '2', 'Content-Type': 'application/json',
@@ -376,39 +232,23 @@ class LocalSynapsesTests(unittest.TestCase):
         self.status.assert_not_called()
         self.synapse.assert_not_called()
 
-    def test_origin_host_csrf_methods_and_control_reject_untrusted_callers(self):
-        cookie = self.paired()
-        for fields in (
-            {'Origin': 'http://example.invalid'}, {'Origin': ''},
-            {'Host': 'example.invalid'}, {'X-Cortex-Read-Only': ''}, {'X-Cortex-Browser': ''}
-        ):
-            with self.subTest(fields=fields):
-                self.assertEqual(self.post('status', cookie=cookie, headers=fields)[0], 403)
-        connection = HTTPConnection('127.0.0.1', self.http.server_port, timeout=3)
-        self.addCleanup(connection.close)
-        connection.request('GET', local.PREFIX + 'status')
-        response = connection.getresponse()
-        self.assertEqual(response.status, 404)
-        response.read()
-        self.status.assert_not_called()
-
-    def test_bounded_schema_rejects_paths_sources_commands_and_malformed_requests(self):
-        cookie = self.paired()
+    def test_bounded_schema_rejects_browser_selected_paths_sources_ids_and_commands(self):
+        cookie = self.connected()
+        for endpoint in ('session', 'resume', 'disconnect', 'status'):
+            for body in ({'path': '/synthetic'}, {'source': 'other'}, {'browser_id': 'a' * 64},
+                         {'credential': 'b' * 64}, {'source_repo': '/other'}):
+                self.assertEqual(self.post(endpoint, body, cookie)[0], 400)
         for body in ({}, {'query': ''}, {'query': ' '}, {'query': None}, {'query': 12},
                      {'query': 'x' * 513}, {'query': 'x', 'source_repo': '/other'},
                      {'query': 'x', 'operation': 'publish'}, {'query': 'x', 'source': 'other'}):
-            with self.subTest(body=body):
-                self.assertEqual(self.post('synapse', body=body, cookie=cookie)[0], 400)
+            self.assertEqual(self.post('synapse', body=body, cookie=cookie)[0], 400)
         for raw in (b'{', b'[]', b'{"query":"a","query":"b"}', b'{"query":NaN}', b'\xff', b'x' * 4097):
             self.assertEqual(self.post('synapse', cookie=cookie, raw=raw)[0], 400)
-        self.assertEqual(self.post('status', cookie=cookie, headers={'Content-Type': 'text/plain'})[0], 400)
-        self.assertEqual(self.post('export', cookie=cookie)[0], 404)
-        self.assertEqual(self.post('status?source=other', cookie=cookie)[0], 404)
         self.synapse.assert_not_called()
         self.status.assert_not_called()
 
     def test_cited_query_delegates_bounded_existing_engine_and_preserves_receipt(self):
-        cookie = self.paired()
+        cookie = self.connected()
         code, receipt, _ = self.post('synapse', {'query': 'synthetic context'}, cookie)
         self.assertEqual(code, 200)
         self.assertEqual(receipt, FOUND)
@@ -416,8 +256,9 @@ class LocalSynapsesTests(unittest.TestCase):
         self.synapse.return_value = {**FOUND, 'status': 'no_match', 'matches': []}
         self.assertEqual(self.post('synapse', {'query': 'absent'}, cookie)[1]['status'], 'no_match')
 
-    def test_denied_unavailable_error_do_not_leak_private_diagnostics_or_cached_results(self):
-        cookie = self.paired()
+    def test_every_read_rechecks_upstream_authority_and_redacts_failures(self):
+        cookie = self.connected()
+        self.assertEqual(self.post('status', cookie=cookie)[0], 200)
         for exception, expected in ((AccessDenied, (403, 'denied')),
                                     (AuthorizationUnavailable, (503, 'unavailable')),
                                     (ValueError, (502, 'error'))):
@@ -436,27 +277,8 @@ class LocalSynapsesTests(unittest.TestCase):
             self.assertNotIn('matches', result)
             self.assertNotIn('/private/path', json.dumps(result))
 
-    def test_disconnect_expiry_and_approval_replacement_revoke_access(self):
-        cookie = self.paired()
-        self.assertEqual(self.post('disconnect', cookie=cookie)[1]['status'], 'disconnected')
-        self.assertEqual(self.post('status', cookie=cookie)[0], 401)
-        now = [0]
-        self.app.clock = lambda: now[0]
-        request_id, cookie = self.pending()
-        now[0] = 301
-        with self.assertRaises(ValueError):
-            self.app.pair(request_id)
-        cookie = self.paired()
-        now[0] += 1801
-        self.assertEqual(self.post('status', cookie=cookie)[0], 401)
-        cookie = self.paired()
-        next_id, next_cookie = self.pending()
-        self.app.pair(next_id)
-        self.assertEqual(self.post('status', cookie=cookie)[0], 401)
-        self.assertEqual(self.post('status', cookie=next_cookie)[0], 200)
-
     def test_concurrency_is_bounded_and_revocation_during_read_withholds_result(self):
-        cookie = self.paired()
+        cookie = self.connected()
         token = cookie.split('=', 1)[1]
         entered, release = threading.Event(), threading.Event()
         def held(**kwargs):
@@ -475,34 +297,31 @@ class LocalSynapsesTests(unittest.TestCase):
         finally:
             release.set()
             thread.join(timeout=4)
-        self.assertEqual(result[0], (401, {'status': 'pairing_required'}))
+        self.assertEqual(result[0], (401, {'status': 'connection_required'}))
         self.assertFalse(thread.is_alive())
         self.assertTrue(self.app.operation.acquire(blocking=False))
         self.app.operation.release()
 
-    def test_cookie_stolen_by_other_loopback_port_does_not_authorize_another_tab(self):
-        cookie = self.paired()
-        foreign = {'X-Cortex-Browser': '4' * 64}
-        self.assertEqual(self.post('status', cookie=cookie, headers=foreign)[0], 401)
-        self.assertEqual(self.post('session', cookie=cookie, headers=foreign)[1]['status'], 'pairing_required')
-        self.post('disconnect', cookie=cookie, headers=foreign)
-        self.assertEqual(self.post('status', cookie=cookie)[0], 200)
-
     def test_oversized_source_response_is_withheld(self):
         self.status.return_value = {**STATUS, 'unexpected': 'sensitive-fixture' * 30000}
         with self.assertLogs(local.LOG, level='WARNING'):
-            code, result, _ = self.post('status', cookie=self.paired())
+            code, result, _ = self.post('status', cookie=self.connected())
         self.assertEqual(code, 502)
         self.assertNotIn('sensitive-fixture', json.dumps(result))
 
-    def test_pending_sessions_are_bounded_and_profile_is_opt_in(self):
-        self.http.synapses.profile = None
+    def test_sessions_are_bounded_profile_is_opt_in_and_expired_capacity_is_reclaimed(self):
+        self.app.profile = None
         self.assertEqual(self.post('session')[0], 503)
         self.assertEqual(self.app.sessions, {})
-        self.http.synapses.profile = PROFILE
+        self.app.profile = PROFILE
+        now = [0]
+        self.app.clock = lambda: now[0]
         for _ in range(8):
-            self.pending()
+            self.connected()
         self.assertEqual(self.post('session')[0], 429)
+        now[0] = 1800
+        self.connected()
+        self.assertEqual(len(self.app.sessions), 1)
         self.status.assert_not_called()
 
 
@@ -529,8 +348,7 @@ class ProfileTests(unittest.TestCase):
                         'X-Cortex-Read-Only': '1', 'X-Cortex-Browser': '3' * 64})
                     response = connection.getresponse()
                     self.assertEqual(response.status, 200)
-                    pending = json.loads(response.read())
-                    self.assertEqual(cli('--pair', pending['pairing_id']).returncode, 0)
+                    self.assertEqual(json.loads(response.read())['status'], 'connected')
                 finally:
                     connection.close()
                 self.assertEqual(cli('--start', '--synapses-profile', str(profile)).returncode, 1)
@@ -566,12 +384,11 @@ class ProfileTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 local.load_profile(server.ROOT / 'package-profile.json', server.ROOT)
 
-    def test_cli_pair_and_profile_errors_are_explicit_without_starting_worker(self):
+    def test_cli_retired_pair_and_profile_errors_are_explicit_without_starting_worker(self):
         with tempfile.TemporaryDirectory() as temporary:
             runtime = Path(temporary) / 'runtime'
             for arguments, expected in (
-                (['--pair', 'not-an-id'], 2),
-                (['--pair', 'a' * 32], 1),
+                (['--pair', 'not-an-id'], 2), (['--pair', 'a' * 32], 2), (['--open'], 1),
                 (['--status', '--synapses-profile', 'not-loaded'], 2),
                 (['--start', '--synapses-profile', str(Path(temporary) / 'missing')], 1)
             ):

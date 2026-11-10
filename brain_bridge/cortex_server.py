@@ -27,7 +27,6 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from . import __version__
 from .connectors import NoRedirect
-from .cortex_launch import open_document
 from .installation.discovery import safe
 from .reconciliation import _lock as runtime_lock, _save as save_state
 from .cortex_synapses import LocalSynapses, PREFIX, handle as handle_synapses, load_profile
@@ -37,8 +36,6 @@ WEB = ROOT / 'web'
 TIMEOUT = 5
 LOG = logging.getLogger('cortex_server')
 CONTROL = '/_cortex/lifecycle'
-PAIR_CONTROL = '/_cortex/pair'
-LAUNCH_CONTROL = '/_cortex/open'
 
 
 def private_file(path, limit=65536):
@@ -76,12 +73,11 @@ def read_state(runtime):
         raise ValueError('Invalid Cortex runtime JSON; retained for inspection.') from error
 
 
-def control(state, stop=False, pair=None, launch=None):
-    endpoint = LAUNCH_CONTROL if launch else PAIR_CONTROL if pair else CONTROL
+def control(state, stop=False):
     request = Request(
-        f"http://127.0.0.1:{state['port']}{endpoint}",
-        data=json.dumps({'launch': launch}).encode() if launch else json.dumps({'pair': pair}).encode() if pair else b'' if stop else None,
-        method='POST' if stop or pair or launch else 'GET',
+        f"http://127.0.0.1:{state['port']}{CONTROL}",
+        data=b'' if stop else None,
+        method='POST' if stop else 'GET',
         headers={'X-Cortex-Control': state['token']}
     )
     try:
@@ -97,28 +93,11 @@ def control(state, stop=False, pair=None, launch=None):
     except URLError as error:
         if isinstance(error, HTTPError):
             error.close()
-            if launch:
-                raise ValueError(f'Browser launch control failed (HTTP {error.code}); verify the server version and configured profile. State retained.') from error
-            if pair:
-                raise ValueError(f'Browser pairing failed (HTTP {error.code}); verify the pending ID and server version. State retained.') from error
         if isinstance(error.reason, ConnectionRefusedError) or getattr(error.reason, 'errno', None) == errno.ECONNREFUSED:
-            if pair or launch:
-                raise ValueError('Cortex stopped before browser approval; no pairing was confirmed.') from error
             return False
         raise ValueError('Cortex ownership could not be verified; runtime state retained.') from error
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError('Cortex ownership could not be verified; runtime state retained.') from error
-    if launch:
-        fields = {'schema_version', 'status', 'launch_file'} if launch == 'issue' else {'schema_version', 'status'}
-        if (not isinstance(identity, dict) or set(identity) != fields or identity.get('schema_version') != 1
-                or identity.get('status') != ('launch_ready' if launch == 'issue' else 'launch_cancelled')
-                or (launch == 'issue' and not isinstance(identity.get('launch_file'), str))):
-            raise ValueError('Invalid Cortex browser launch response.')
-        return identity
-    if pair:
-        if identity != {'schema_version': 1, 'status': 'paired', 'expires_in_seconds': 1800}:
-            raise ValueError('Invalid Cortex browser pairing response.')
-        return identity
     expected = {key: state[key] for key in ('pid', 'instance', 'root')}
     if identity != expected:
         raise ValueError('Cortex ownership mismatch; refusing lifecycle operation.')
@@ -168,38 +147,13 @@ class StaticHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path.startswith(PREFIX):
             handle_synapses(self)
-        elif self.path not in (CONTROL, PAIR_CONTROL, LAUNCH_CONTROL):
+        elif self.path != CONTROL:
             self.send_error(404)
         elif self.authorized():
             try:
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 0 <= length <= 256 or self.headers.get('Transfer-Encoding') is not None:
                     raise ValueError('Invalid control payload.')
-                if self.path in (PAIR_CONTROL, LAUNCH_CONTROL):
-                    if not length:
-                        raise ValueError('Pairing requires a pending browser ID.')
-                    self.connection.settimeout(TIMEOUT)
-                    payload = json.loads(self.rfile.read(length))
-                    if self.path == LAUNCH_CONTROL:
-                        if payload == {'launch': 'issue'}:
-                            result = self.server.synapses.launch(
-                                self.server.runtime, f'http://127.0.0.1:{self.server.server_port}')
-                        elif payload == {'launch': 'cancel'}:
-                            self.server.synapses.cancel_launch()
-                            result = {'schema_version': 1, 'status': 'launch_cancelled'}
-                        else:
-                            raise ValueError('Invalid launch request.')
-                    else:
-                        if not isinstance(payload, dict) or set(payload) != {'pair'} or not isinstance(payload['pair'], str):
-                            raise ValueError('Invalid pairing request.')
-                        result = self.server.synapses.pair(payload['pair'])
-                    body = json.dumps(result).encode()
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.send_header('Content-Length', str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
-                    return
                 if length:
                     raise ValueError('Shutdown does not accept a payload.')
             except (ValueError, OSError):
@@ -271,7 +225,6 @@ def worker():
                 LOG.info('Owned static server started pid=%s port=%s', identity['pid'], identity['port'])
                 thread.join()
         finally:
-            server.synapses.cancel_launch()
             server.shutdown()
             thread.join()
             LOG.info('Owned static server stopped pid=%s', identity['pid'])
@@ -335,14 +288,14 @@ def start(runtime, port, profile=None):
                     (runtime / 'state.json').unlink()
 
 
-def operate(action, runtime, port, profile=None, pair=None):
+def operate(action, runtime, port, profile=None):
     runtime = Path(os.path.abspath(runtime))
     safe(runtime)
     if runtime.is_relative_to(ROOT):
         raise ValueError('Cortex runtime state must be outside the source checkout.')
     if not runtime.exists():
-        if action in ('pair', 'open'):
-            raise ValueError('Start Cortex with an external Synapses profile before opening a trusted tab.')
+        if action == 'open':
+            raise ValueError('Start Cortex before opening its page.')
         if action != 'start':
             return {'status': 'stopped'}, 1 if action == 'status' else 0
         runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -354,25 +307,13 @@ def operate(action, runtime, port, profile=None, pair=None):
         running = state is not None and control(state)
         if action == 'status':
             return public_state(state) if running else {'status': 'stale' if state else 'stopped'}, 0 if running else 1
-        if action == 'pair':
-            if not running:
-                raise ValueError('Cortex is not running; no browser was paired.')
-            return control(state, pair=pair), 0
         if action == 'open':
             if not running:
-                raise ValueError('Start Cortex with a consultation profile before opening the connected UI.')
-            result = control(state, launch='issue')
-            path = Path(result['launch_file'])
-            try:
-                if path.parent != runtime or not re.fullmatch(r'launch-[\w-]+\.html', path.name):
-                    raise ValueError('Invalid private Cortex launch file.')
-                private_file(path)
-                open_document(path)
-            except (OSError, ValueError, webbrowser.Error):
-                control(state, launch='cancel')
-                raise
+                raise ValueError('Start Cortex before opening its page.')
+            if not webbrowser.open(public_state(state)['url'], new=2):
+                raise ValueError('The native browser did not accept the Cortex URL.')
             return {**public_state(state), 'browser': 'launch_requested',
-                    'message': 'Click Approve connection on the private page; Cortex connects automatically.'}, 0
+                    'message': 'Click Connect to Brain in Cortex.'}, 0
         if action == 'stop':
             if running:
                 control(state, stop=True)
@@ -413,8 +354,7 @@ def main(argv=None):
     actions = parser.add_mutually_exclusive_group(required=True)
     for action in ('start', 'stop', 'status'):
         actions.add_argument('--' + action, action='store_true')
-    actions.add_argument('--open', action='store_true', help='Open a private one-click launch page for the running configured Cortex server.')
-    actions.add_argument('--pair', metavar='BROWSER_ID', help='Legacy diagnostic pairing; normal browser access uses --open.')
+    actions.add_argument('--open', action='store_true', help='Open the ordinary Cortex URL; connect inside the page.')
     parser.add_argument('--synapses-profile', type=Path, help='External consultation routing profile; --start only.')
     parser.add_argument('--version', action='version', version='cortex_server ' + __version__)
     parser.add_argument('--port', type=int, default=os.environ.get('CORTEX_PORT', '8080'))
@@ -425,8 +365,6 @@ def main(argv=None):
     args = parser.parse_args(arguments)
     if args.synapses_profile is not None and not args.start:
         parser.error('--synapses-profile is supported only with --start.')
-    if args.pair is not None and not re.fullmatch('[a-f0-9]{32}', args.pair):
-        parser.error('--pair requires the pending browser ID displayed by Cortex.')
     if not 0 <= args.port <= 65535:
         parser.error('Port must be 0..65535; 0 selects an available ephemeral port.')
     host = os.environ.get('CORTEX_HOST', '127.0.0.1')
@@ -434,11 +372,11 @@ def main(argv=None):
         parser.error('Cortex serves only loopback (127.0.0.1 or localhost).')
     from .__main__ import runtime_info
     try:
-        action = 'pair' if args.pair else next(name for name in ('start', 'stop', 'status', 'open') if getattr(args, name))
+        action = next(name for name in ('start', 'stop', 'status', 'open') if getattr(args, name))
         if args.synapses_profile is not None:
             load_profile(args.synapses_profile, ROOT)
-        result, code = operate(action, args.runtime_dir, args.port, args.synapses_profile, args.pair)
-    except (OSError, ValueError, RuntimeError) as error:
+        result, code = operate(action, args.runtime_dir, args.port, args.synapses_profile)
+    except (OSError, ValueError, RuntimeError, webbrowser.Error) as error:
         result, code = {'status': 'error', 'error': str(error)}, 1
     result['info'] = {**runtime_info(), 'script': 'cortex_server'}
     print(json.dumps(result, indent=2 if args.pretty else None))

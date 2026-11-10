@@ -17,7 +17,6 @@ web/
     activity.mjs            per-page request lifecycle and subscriptions
     client.mjs              injected JSON transport; no product endpoints
     synapses.mjs            explicit local read routes and receipt validation
-    bootstrap.mjs           one-use launch transfer from the exact opener
   components/
     api-status.mjs          request status button and disclosure
     synapses.mjs            configured Brain selection, status and cited Recall
@@ -31,10 +30,9 @@ cortex_server               source-checkout lifecycle launcher
 brain_bridge/
   cortex_server.py          owned loopback preview and private CLI control
   cortex_synapses.py        expiring local sessions; delegates managed reads
-  cortex_launch.py          short-lived owner-private browser launch document
 tests/
   test_cortex_server.py     isolated real-process lifecycle behavior
-  test_cortex_synapses.py   synthetic bootstrap, authority and HTTP boundaries
+  test_cortex_synapses.py   synthetic sessions, authority and HTTP boundaries
 ```
 
 Keep transport and activity independent of DOM rendering. Future product
@@ -91,22 +89,22 @@ Exit 0 means the requested start/stop succeeded or status is running; status
 stopped/stale and lifecycle errors return 1, and invalid arguments return 2.
 `--help` and `--version` are supported. There is no restart, installation,
 boot-service registration, remote binding or deployment operation.
-`--open` asks the native browser to open a private one-click launch page for the
-running configured server. A successful result confirms the launch request, not
-browser readiness or upstream access. Missing/blocked native launch is an error,
-revokes its bootstrap and removes the private file without stopping the server.
-`--pair BROWSER_ID` remains only as a legacy diagnostic interface; the normal UI
-neither displays nor requires it.
+`--open` optionally asks the native browser to open the ordinary URL of the
+running server. A successful result confirms that request, not browser readiness
+or upstream access. A missing/blocked native browser is an explicit error
+without stopping the server. It is not required for normal use.
+The obsolete `--pair` and private launch/bootstrap interfaces have been removed.
 
 Only `web/` is served; hidden paths, traversal, symlinks and directory listings
 are rejected. An authenticated loopback `/_cortex/lifecycle` control is internal
 process ownership/shutdown plumbing, not a browser data API or API-badge
-activity source. Opening a plain URL or API details makes no backend requests.
-A trusted launch exchanges its short-lived bootstrap and automatically checks
+activity source. Opening a fresh URL or API details makes no backend requests.
+A page refresh with saved local session state resumes that session and checks
 the configured source status; private context is requested only by Recall.
 Theme/source preferences use only `cortex.theme` and
 `cortex.source` in browser local storage; denied storage is visibly reported.
-Credentials, queries and results are never placed there or in session storage.
+Only the origin-scoped local CSRF key uses `cortex.csrf` in session storage.
+Upstream credentials, queries and results are never placed in browser storage.
 
 Run behavioral coverage with Node.js 22+ (no npm packages):
 
@@ -197,94 +195,73 @@ explicit profile rejects that case. Stop/start the owned instance deliberately.
 Starting without a profile still serves the foundation, but local reads return
 `not_configured`; no ambient source is inferred.
 
-1. Open the ordinary Cortex URL, `http://127.0.0.1:PORT/`, and click
-   **Connect to Brain**. No terminal command or launcher discovery is required.
-2. The existing native browser opens an owner-private approval page naming the
-   configured Brain and exact Cortex origin. Click **Approve connection** there.
-   The independent private page protects the connection from a browser caller
-   authorizing itself; the first Cortex click only requests this approval.
-3. A clean, trusted Cortex tab opens and automatically checks existing upstream
-   authority/source status before enabling bounded **Recall**. No redundant
-   Connect click is required. The original requesting tab remains disconnected;
-   the approval page and original tab may be closed.
+Open the ordinary Cortex URL, `http://127.0.0.1:PORT/`, and click
+**Connect to Brain**. Cortex establishes its local session in that same page,
+then verifies existing upstream access/source status before enabling bounded
+**Recall**. There is no popup, generated file, separately discovered launcher,
+manual pairing command or additional approval.
 
-**Disconnect** immediately disables reads and clears displayed data.
-**Connect to Brain** reconnects the same trusted tab until fixed session expiry
-without another approval page. After expiry or in a fresh tab, the same button
-starts approval again. `./cortex_server --open` remains an optional operator
-shortcut to the same approval, not the normal user's entry point.
+Refresh automatically resumes the same fixed-lifetime session and rechecks
+source authority. It does not create another session or extend expiry.
+**Disconnect** disables reads, revokes the server session, expires its cookie,
+removes the local CSRF key and clears displayed data. Refresh then stays
+disconnected. A network failure during Disconnect clears local access but
+explicitly reports that server revocation was not confirmed. Connect is
+available again after disconnect/expiry. Browser session storage must be
+available; failure is explicit rather than a memory-only fallback that would
+silently lose the connection on refresh.
 
 The current external profile selects **one** registered named source. Only that
 alias appears in the selector; this does not add multiple-profile discovery.
 The non-sensitive alias choice is remembered and accepted only if still present
 in the server-provided list. An unavailable/denied Brain returns an explicit
 error, never a new grant. Existing Git/Brain access remains the record authority;
-local launch only protects the backend from unrelated browser callers.
+the local web session protects against unrelated browser origins, not OS users.
 
-### Credential-free URL launch
+### Loopback browser session boundary
 
-The browser's same-origin `launch` request asks the existing native browser to
-open an unpredictable owner-private HTML approval file inside the existing
-private runtime directory. It returns no credential, file path, cookie or
-authority to the initiating page. Its arbitrary tab ID/key is not approval.
-Only one unexpired approval may be pending; repeated requests return429 without
-replacing it or opening more windows. Failed native launch returns503 and
-cleans only its own pending file, preserving any newer owner-issued launch.
-Missing native-browser/runtime capability is an explicit error, never a false
-connected state. No protocol handler, installation or new OS grant is added.
-The authenticated `/_cortex/open` control supports the optional operator shortcut.
+Each explicit Connect creates a fresh unpredictable server ID and CSRF key.
+The ID is an HttpOnly, SameSite=Strict, API-path cookie named for the listening
+port. The CSRF key is kept only in the Cortex origin's `sessionStorage` and
+sent through `X-Cortex-Browser`. It survives reload in that tab and is never
+sent as a cookie or URL. Connect never adopts a supplied cookie ID: it revokes
+that existing ID and replaces it. A cookie injected by another localhost port
+therefore cannot fix the victim's session to attacker-known authority.
 
-A random
-single-use credential expires in 60 seconds and is never printed or placed in a
-URL, fragment, referrer, form submission, browser storage or persisted history
-URL. The file is deleted on exchange, expiry, replacement, launch failure or
-normal server shutdown. Content modified by another writer is preserved rather
-than deleted. After an abrupt process/host crash, expired private launch files
-may remain; their old credentials cannot authorize a new process. Do not copy
-these private documents or the runtime directory into source or shared storage.
+**Cookies are not port-scoped**, and SameSite does not isolate localhost ports.
+The port-specific cookie name prevents ordinary instance collisions, not
+hostile cookie disclosure/injection. A leaked or injected cookie is
+insufficient for resume, reads or Disconnect without the correct origin-scoped
+CSRF key. Other ports cannot read that session storage; they cannot forge the
+browser's exact Origin or pass a cross-origin non-simple request preflight.
+All sensitive routes require exact `127.0.0.1:PORT` Host and matching HTTP
+Origin, JSON and custom headers. There is no CORS allowance; navigations, HTML
+forms and simple cross-origin fetches cannot establish sessions or read data.
+Cookies alone are never browser-read authority. Denial-of-service by another
+local service overwriting cookies is not prevented.
 
-The launch page uses a user click to open the clean Cortex URL without relying
-on popup bypasses. It accepts readiness only from that window at the exact
-configured origin and transfers the credential using exact-origin
-`postMessage`. The app accepts one transfer only from its actual file opener
-(opaque `null` origin), redeems it through a same-origin POST bound to its fresh
-tab key, then drops the opener. The ready/complete handshake messages contain
-no credential or source data; only these non-sensitive replies use `*` because
-the local file has an opaque origin. No `null`-origin HTTP authorization or CORS
-exception is added. A duplicate/expired/wrong credential is rejected atomically.
-The launch document has restrictive script CSP and no-referrer policy.
+Sessions are process-local, limited to eight independent cookie jars and have
+a fixed 30-minute lifetime. Restart/expiry revoke access. Refresh resumes
+without issuing a new cookie. Cookies are shared across tabs of a browser:
+connecting in another tab replaces that browser's cookie, so the former tab
+must reconnect; concurrent shared-tab sessions are not promised. The server
+rechecks the session after every managed read before disclosure. The browser
+clears results on errors, disconnect and local expiry, and ignores late replies.
 
-There is one approved **tab** per server process and a fixed 30-minute local
-session. A new successful launch exchange replaces other sessions. Restart and
-expiry revoke browser trust; disconnect revokes read access while retaining
-that fixed-lifetime trust for reconnect. The server rechecks the connected
-session after each managed read before disclosure. The browser clears results
-on errors, disconnect and local expiry, and ignores late replies after
-cancellation. Reload/different-tab starts approval with **Connect to Brain**
-again; a plain URL or UI Connect alone is not proof of local browser identity.
-Concurrent-tab/shared
-session behavior is not claimed. The old manual pairing control remains
-available for diagnostics (five-minute pending IDs, at most eight), not the
-normal connection experience.
-
-An HttpOnly, SameSite=Strict cookie is combined with a cryptographically random
-tab key held only in JavaScript memory and sent in a custom header. **Loopback
-cookies are shared across ports**, so the cookie alone cannot authorize reads;
-the extra key prevents another local service from using a cookie it received.
-Requests require the exact Host and Origin plus custom read-only headers, use
-same-origin cookies, reject redirects and have no cross-origin allowance.
-This is HTTP on IPv4 loopback only, not remote authentication or protection
-against malicious code already running as the same OS user. Windows still
-requires the private runtime directory ACL described above.
+This is HTTP on IPv4 loopback only, not remote/multiuser authentication.
+It does **not** defend against malicious code running as the same OS user,
+which can forge HTTP requests or access that user's files/processes. It also
+does not authenticate an OS user or create any upstream grant. No secret is
+placed in URLs, history/referrers or logs. Windows still requires the private
+runtime directory ACL described above.
 
 Version-1 HTTP contract (all routes are POST, JSON, under `/api/local/`):
 
 | Route | Request | Result |
 | --- | --- | --- |
-| `launch` | `{}` | HTTP202 `launch_requested`; native private approval requested, no session/read authority or credential returned. One pending approval, otherwise429. |
-| `bootstrap` | Private single-use credential | `trusted`, configured alias list and remaining lifetime; tab-bound HttpOnly cookie. No source read or grant. |
-| `session` | `{"source":"example"}` | `paired` local read session only for the existing configured alias. No filesystem paths or alternate grants. |
-| `disconnect` | `{}` | `disconnected`; reads disabled, fixed-lifetime tab trust retained for Connect. No source mutation. |
+| `session` | `{}` | `connected`, configured alias and remaining lifetime; rotated HttpOnly cookie bound to the CSRF header. No source read or grant. |
+| `resume` | `{}` | `connected` only with matching cookie/key and unexpired session; no expiry extension. |
+| `disconnect` | `{}` | `disconnected`; server session removed and cookie expired. No source mutation. |
 | `status` | `{}` | Authorized named-source receipt, `ready`, source verification/synchronization and separate cache freshness/counts. |
 | `synapse` | `{"query":"synthetic term"}` | Existing `found`/`no_match` receipt, at most five cited matches with excerpts up to 240 Unicode code points. |
 
@@ -296,8 +273,8 @@ the browser stops waiting after 90 seconds. Browser cancellation does **not**
 claim to cancel an already executing server-side read; a subsequent read may
 remain busy until it finishes. There is no automatic retry or polling.
 
-HTTP 401 means local launch/session expired or missing, 403 denies a caller or source,
-503 means native launch/configuration/upstream authority unavailable, and 502 means a failed
+HTTP 401 means local session expired, missing or mismatched, 403 denies a caller or source,
+503 means configuration/upstream authority unavailable, and 502 means a failed
 managed read. Unexpected fields or malformed bodies return 400. Raw private
 diagnostic messages, paths, credentials, query strings and excerpts are omitted
 from logs/error responses; failures never return cached authorized results.
@@ -311,11 +288,11 @@ and supersession metadata. The UI renders excerpts as text, validates immutable
 GitHub citations against the source snapshot and shows supersession rather than
 treating old context as authority. Private examples/configuration are not part
 of this public source tree. Offline tests mock only the managed source boundary,
-exercise real local HTTP, bootstrap replay/expiry/concurrency, native-launch
-failure cleanup, tab/origin isolation and configured-source decisions, and
-require no private grant or data. Browser tests also cover one-use opener
-handoff, actionable fresh-URL launch intent, automatic connection only after
-approval, credential-free readiness messages, source preferences and reconnect.
+exercise real local HTTP, session rotation/replay/expiry/concurrency,
+cookie injection/leakage, origin isolation and configured-source decisions,
+and require no private grant or data. Browser tests cover same-page Connect,
+refresh continuity, Disconnect/reconnect, blocked storage, explicit errors,
+late-response suppression and source preferences without private persistence.
 
 ## Reference implementation and adaptation
 
@@ -356,7 +333,7 @@ This foundation does not complete or approve the product taxonomy, journeys,
 full standalone application/server or versioned API contracts. Those retain their
 existing CORTEX2-5 and CORTEX8 ownership and acceptance boundaries. No proposed
 navigation is presented as working. The owner-selected local read pilot defines
-only the limited pairing/status/Recall contract above; it does not accept or
+only the limited session/status/Recall contract above; it does not accept or
 close CORTEX6-9 or BDT5/6/16/17/20 shared-service/authentication prerequisites.
 Other authenticated integrations still require their applicable contracts.
 The source preview's limited

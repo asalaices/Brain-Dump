@@ -275,10 +275,14 @@ test('browser entry wires real selectors and never probes an invented API', asyn
   const previous = {document: globalThis.document, window: globalThis.window, fetch: globalThis.fetch};
   t.after(() => Object.assign(globalThis, previous));
   globalThis.document = documentTarget;
-  globalThis.window = {localStorage: {getItem: () => null, setItem() {}}};
+  globalThis.window = {
+    location: {origin: 'http://127.0.0.1:8080'},
+    localStorage: {getItem: () => null, setItem() {}},
+    sessionStorage: {getItem: () => null, setItem() {}, removeItem() {}}
+  };
   globalThis.fetch = () => assert.fail('foundation must not make backend requests');
   await import('../../web/app.mjs');
-  assert.equal(elements.get('#api-status').dataset.state, 'unconfigured');
+  assert.equal(elements.get('#api-status').dataset.state, 'idle');
   assert.equal(documentTarget.documentElement.dataset.theme, 'dark');
   elements.get('#api-status').dispatchEvent(new Event('click'));
   assert.equal(elements.get('#api-details').hidden, false);

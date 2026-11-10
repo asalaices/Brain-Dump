@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFile} from 'node:fs/promises';
-import {runInNewContext} from 'node:vm';
 import {createApiActivity} from '../../web/api/activity.mjs';
 import {createApiClient} from '../../web/api/client.mjs';
 import {createSynapsesClient, validateReceipt} from '../../web/api/synapses.mjs';
 import {bindSynapses, renderMatches} from '../../web/components/synapses.mjs';
-import {receiveLaunch} from '../../web/api/bootstrap.mjs';
 
 const origin = 'http://127.0.0.1:8080';
 const source = {name: 'example', repository: 'example/synthetic', commit: 'a'.repeat(40)};
@@ -25,10 +22,13 @@ const found = {
   schema_version: 1, status: 'found', read_only: true, source, request_id: 'synapse-request',
   freshness: {source_verified: true, cache_fresh: false}, matches: [match], truncated: true
 };
-const pending = {schema_version: 1, status: 'pairing_required', pairing_id: 'c'.repeat(32), expires_in_seconds: 300};
-const paired = {...pending, status: 'paired', expires_in_seconds: 1800, sources: ['example']};
-const trusted = {...paired, status: 'trusted'};
+const connected = {schema_version: 1, status: 'connected', expires_in_seconds: 1800, sources: ['example']};
 const response = value => ({ok: true, status: 200, json: async () => value});
+const storage = map => ({
+  getItem: key => map.get(key) ?? null,
+  setItem: (key, value) => map.set(key, value),
+  removeItem: key => map.delete(key)
+});
 
 class Element {
   hidden = false;
@@ -45,7 +45,7 @@ class Element {
 }
 
 function fixture(t, options = {}) {
-  const ids = ['connect', 'disconnect', 'form', 'query', 'search', 'notice', 'pairing', 'source', 'results', 'brain', 'brain-control', 'preference'];
+  const ids = ['connect', 'disconnect', 'form', 'query', 'search', 'notice', 'source', 'results', 'brain', 'brain-control', 'preference'];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   elements.form.hidden = true;
   const documentTarget = {
@@ -54,15 +54,25 @@ function fixture(t, options = {}) {
   };
   const activity = createApiActivity();
   const calls = [];
-  const queue = [];
+  const queue = [...(options.responses ?? [])];
   const saved = new Map(options.saved ? [['cortex.source', options.saved]] : []);
-  const opener = {postMessage() {}};
-  const windowTarget = Object.assign(new Element(), {opener: options.fresh ? null : opener});
+  const sessionMap = options.sessionMap ?? new Map();
   const dispose = bindSynapses({
-    activity, documentTarget, getOrigin: () => origin, windowTarget,
+    activity, documentTarget, getOrigin: () => origin,
+    windowTarget: {open() { assert.fail('Connect must not open another page'); }},
     getStorage: () => {
-      if (options.storageDenied) throw new Error('fixture storage denied');
-      return {getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value)};
+      if (options.storageDenied) throw new Error('fixture preference storage denied');
+      return storage(saved);
+    },
+    getSessionStorage: () => {
+      if (options.sessionDenied) throw new Error('fixture session storage denied');
+      return {
+        ...storage(sessionMap),
+        removeItem: key => {
+          if (options.removeDenied) throw new Error('fixture removal denied');
+          sessionMap.delete(key);
+        }
+      };
     },
     fetchImpl: async (url, options) => {
       calls.push({url, options});
@@ -72,13 +82,11 @@ function fixture(t, options = {}) {
     }
   });
   t.after(dispose);
-  const launch = async (upstream = response(status)) => {
-    queue.push(response(trusted), response(paired), upstream);
-    await windowTarget.handlers.get('message')({
-      source: opener, origin: 'null', data: {type: 'cortex-bootstrap', credential: 'd'.repeat(64)}
-    });
+  const connect = async (upstream = response(status), receipt = connected) => {
+    queue.push(response(receipt), upstream);
+    await elements.connect.fire('click');
   };
-  return {...elements, documentTarget, activity, calls, queue, launch, saved};
+  return {...elements, documentTarget, activity, calls, queue, connectNow: connect, saved, sessionMap, dispose};
 }
 
 test('cookies require explicit same-origin transport and cannot be widened per request', async () => {
@@ -98,38 +106,76 @@ test('cookies require explicit same-origin transport and cannot be widened per r
   await client.requestJson('fixture', {credentials: 'include', redirect: 'follow'});
 });
 
-test('local adapter pins origin, read routes, JSON schema and a per-tab key', async () => {
+test('adapter pins origin, JSON, custom headers and origin-scoped session state', async () => {
   const activity = createApiActivity();
-  let browserKey;
+  const saved = new Map([['cortex.csrf', 'c'.repeat(64)]]);
   const client = createSynapsesClient({
-    origin, activity, fetchImpl: async (url, options) => {
+    origin, activity, getSessionStorage: () => storage(saved),
+    fetchImpl: async (url, options) => {
       assert.equal(url, `${origin}/api/local/status`);
       assert.equal(options.method, 'POST');
       assert.equal(options.credentials, 'same-origin');
       assert.equal(options.redirect, 'error');
       assert.equal(options.headers['Content-Type'], 'application/json');
       assert.equal(options.headers['X-Cortex-Read-Only'], '1');
-      assert.match(options.headers['X-Cortex-Browser'], /^[a-f0-9]{64}$/);
-      browserKey ??= options.headers['X-Cortex-Browser'];
-      assert.equal(options.headers['X-Cortex-Browser'], browserKey);
+      assert.equal(options.headers['X-Cortex-Browser'], 'c'.repeat(64));
       return response(status);
     }
   });
   await client.request('status');
   await client.request('status');
-  assert.throws(() => client.request('export'), /Unsupported/);
+  for (const operation of ['export', 'launch', 'bootstrap']) {
+    assert.throws(() => client.request(operation), /Unsupported/);
+  }
   assert.equal(activity.snapshot().started, 2);
   for (const invalid of ['https://127.0.0.1', 'http://localhost:8080', 'http://example.test', `${origin}/path`]) {
     assert.throws(() => createSynapsesClient({origin: invalid, activity}), /loopback/);
   }
 });
 
+test('Connect rotates CSRF state, refresh restores it and Disconnect removes it', async () => {
+  const saved = new Map();
+  const requests = [];
+  const adapter = () => createSynapsesClient({
+    origin, activity: createApiActivity(), getSessionStorage: () => storage(saved),
+    fetchImpl: async (_url, options) => {
+      requests.push(options);
+      return response(connected);
+    }
+  });
+  const first = adapter();
+  assert.equal(first.hasSession(), false);
+  assert.throws(() => first.request('resume'), /No local session/);
+  await first.request('session');
+  const firstKey = requests.at(-1).headers['X-Cortex-Browser'];
+  assert.match(firstKey, /^[a-f0-9]{64}$/);
+  assert.deepEqual([...saved.keys()], ['cortex.csrf']);
+  const refreshed = adapter();
+  assert.equal(refreshed.hasSession(), true);
+  await refreshed.request('resume');
+  assert.equal(requests.at(-1).headers['X-Cortex-Browser'], firstKey);
+  await refreshed.request('session');
+  assert.notEqual(requests.at(-1).headers['X-Cortex-Browser'], firstKey);
+  refreshed.clearSession();
+  assert.equal(refreshed.hasSession(), false);
+  assert.equal(saved.size, 0);
+  assert.throws(() => refreshed.request('status'), /No local session/);
+});
+
 test('invalid successful responses count as failures, not completed backend reads', async () => {
   const activity = createApiActivity();
-  const client = createSynapsesClient({origin, activity, fetchImpl: async () => response({...status, synchronized: false})});
+  const client = createSynapsesClient({
+    origin, activity, getSessionStorage: () => storage(new Map([['cortex.csrf', 'c'.repeat(64)]])),
+    fetchImpl: async () => response({...status, synchronized: false})
+  });
   await assert.rejects(client.request('status'), /Unverified/);
   assert.equal(activity.snapshot().failed, 1);
   assert.equal(activity.snapshot().completed, 0);
+  for (const bad of [
+    {...connected, expires_in_seconds: 1801}, {...connected, expires_in_seconds: -1},
+    {...connected, sources: ['example', 'other']}, {...connected, sources: ['/'.repeat(129)]},
+    {...connected, status: 'trusted'}
+  ]) assert.throws(() => validateReceipt(bad), TypeError);
 });
 
 test('bounded citations remain bound to the source snapshot and allow Unicode code points', () => {
@@ -141,11 +187,8 @@ test('bounded citations remain bound to the source snapshot and allow Unicode co
     {...found, matches: [{...match, excerpt: {text: 'x'.repeat(241)}}]},
     {...found, matches: [{...match, source_url: 'javascript:alert(1)'}]},
     {...found, matches: [{...match, source_url: 'https://github.com/other/repo/blob/other/file'}]},
-    {...found, freshness: {source_verified: false}},
-    {...found, status: 'no_match'}
-  ]) {
-    assert.throws(() => validateReceipt(bad), TypeError);
-  }
+    {...found, freshness: {source_verified: false}}, {...found, status: 'no_match'}
+  ]) assert.throws(() => validateReceipt(bad), TypeError);
 });
 
 test('private excerpts render as text with safe immutable citations and supersession', () => {
@@ -159,47 +202,19 @@ test('private excerpts render as text with safe immutable citations and superses
   assert.equal('innerHTML' in quote, false);
 });
 
-test('ordinary Cortex entry has enabled Connect and requests independent approval, never self-authorization', async t => {
-  const f = fixture(t, {fresh: true});
-  assert.equal(f.calls.length, 0);
-  assert.equal(f.connect.disabled, false);
-  assert.equal(f['brain-control'].hidden, true);
-  f.queue.push(response({schema_version: 1, status: 'launch_requested'}));
-  await f.connect.fire('click');
-  assert.equal(f.calls[0].url, `${origin}/api/local/launch`);
-  assert.deepEqual(JSON.parse(f.calls[0].options.body), {});
-  assert.match(f.notice.textContent, /Approve connection/);
-  assert.match(f.notice.textContent, /original tab remains disconnected/);
-  assert.equal(f.form.hidden, true);
-  assert.equal(f.disconnect.hidden, true);
-  assert.equal(f.source.textContent, '');
-  assert.equal(f.saved.size, 0);
-  assert.equal(f.activity.snapshot().completed, 1);
-});
-
-test('native approval failure and already-pending approval offer an explicit retry, not a dead control', async t => {
-  for (const code of [503, 429]) {
-    const f = fixture(t, {fresh: true});
-    f.queue.push({ok: false, status: code});
-    await f.connect.fire('click');
-    assert.match(f.notice.textContent, code === 429 ? /already waiting/ : /could not open/);
-    assert.equal(f.form.hidden, true);
-    assert.equal(f.connect.disabled, false);
-  }
-});
-
-test('approved tab automatically connects configured Brain without another click through real activity', async t => {
+test('ordinary entry Connect establishes and authorizes on the same page with actual request activity', async t => {
   const f = fixture(t);
   assert.equal(f.calls.length, 0);
-  await f.launch();
-  assert.equal(f.brain.value, 'example');
   assert.equal(f.connect.disabled, false);
-  assert.doesNotMatch(f.notice.textContent + f.pairing.textContent, /--pair/);
-  assert.deepEqual(JSON.parse(f.calls[1].options.body), {source: 'example'});
+  await f.connectNow();
+  assert.deepEqual(f.calls.map(call => call.url), [`${origin}/api/local/session`, `${origin}/api/local/status`]);
+  assert.deepEqual(JSON.parse(f.calls[0].options.body), {});
+  assert.equal(f.brain.value, 'example');
   assert.equal(f.form.hidden, false);
+  assert.equal(f.disconnect.hidden, false);
   assert.match(f.source.textContent, /Source verified and synchronized/);
   assert.match(f.source.textContent, /cache: stale or absent/);
-  assert.equal(f.activity.snapshot().completed, 3);
+  assert.equal(f.activity.snapshot().completed, 2);
   f.query.value = 'synthetic context';
   f.queue.push(response(found));
   await f.form.fire('submit');
@@ -208,11 +223,29 @@ test('approved tab automatically connects configured Brain without another click
   assert.deepEqual(JSON.parse(f.calls.at(-1).options.body), {query: 'synthetic context'});
 });
 
+test('refresh resumes without a new session and Disconnect survives another refresh', async t => {
+  const first = fixture(t);
+  await first.connectNow();
+  first.dispose();
+  const refreshed = fixture(t, {sessionMap: first.sessionMap, responses: [response(connected), response(status)]});
+  await new Promise(setImmediate);
+  assert.deepEqual(refreshed.calls.map(call => call.url.split('/').at(-1)), ['resume', 'status']);
+  assert.equal(refreshed.form.hidden, false);
+  refreshed.queue.push(response({schema_version: 1, status: 'disconnected'}));
+  await refreshed.disconnect.fire('click');
+  assert.equal(refreshed.sessionMap.size, 0);
+  assert.equal(refreshed.form.hidden, true);
+  assert.match(refreshed.notice.textContent, /Disconnected/);
+  const after = fixture(t, {sessionMap: first.sessionMap});
+  assert.equal(after.calls.length, 0);
+  assert.equal(after.form.hidden, true);
+});
+
 test('denial, unavailable, malformed and expired responses clear previously displayed results', async t => {
   for (const code of [403, 503, 502, 429, 401, 200]) {
     await t.test(String(code), async t => {
       const f = fixture(t);
-      await f.launch();
+      await f.connectNow();
       f.queue.push(response(found));
       f.query.value = 'first';
       await f.form.fire('submit');
@@ -222,14 +255,17 @@ test('denial, unavailable, malformed and expired responses clear previously disp
       assert.equal(f.results.children.length, 0);
       assert.equal(f.source.textContent, '');
       assert.equal(f.activity.snapshot().failed, 1);
-      if (code === 401) assert.equal(f.form.hidden, true);
+      if (code === 401) {
+        assert.equal(f.form.hidden, true);
+        assert.equal(f.sessionMap.size, 0);
+      }
     });
   }
 });
 
-test('disconnect cancels in-flight browser reads, clears data and ignores late replies', async t => {
+test('disconnect cancels in-flight reads, clears data and ignores late replies', async t => {
   const f = fixture(t);
-  await f.launch();
+  await f.connectNow();
   let finish;
   f.queue.push(() => new Promise(resolve => { finish = resolve; }));
   f.query.value = 'private query';
@@ -242,155 +278,93 @@ test('disconnect cancels in-flight browser reads, clears data and ignores late r
   finish(response(found));
   await reading;
   assert.equal(f.results.children.length, 0);
+  assert.equal(f.sessionMap.size, 0);
   assert.match(f.notice.textContent, /Disconnected/);
-  assert.equal(f.connect.disabled, false);
-  f.queue.push(response(paired), response(status));
-  await f.connect.fire('click');
+  await f.connectNow();
   assert.equal(f.form.hidden, false);
-  assert.equal(f.calls.filter(call => call.url.endsWith('/bootstrap')).length, 1);
 });
 
-test('only the source alias is remembered; unavailable storage and removed sources are visible', async t => {
+test('failed disconnect clears local access but explicitly reports unconfirmed server revocation', async t => {
+  const f = fixture(t);
+  await f.connectNow();
+  f.queue.push(() => { throw new Error('fixture network failure'); });
+  await f.disconnect.fire('click');
+  assert.match(f.notice.textContent, /server revocation was not confirmed/);
+  assert.equal(f.sessionMap.size, 0);
+  assert.equal(f.form.hidden, true);
+});
+
+test('blocked session storage is explicit and never silently falls back to memory or a popup', async t => {
+  const f = fixture(t, {sessionDenied: true});
+  assert.match(f.notice.textContent, /session storage is unavailable/);
+  await f.connect.fire('click');
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.form.hidden, true);
+  assert.match(f.notice.textContent, /session storage is unavailable/);
+  assert.equal(f.connect.disabled, false);
+});
+
+test('Disconnect reports a local storage removal failure even when server revocation succeeds', async t => {
+  const f = fixture(t, {removeDenied: true});
+  await f.connectNow();
+  f.queue.push(response({schema_version: 1, status: 'disconnected'}));
+  await f.disconnect.fire('click');
+  assert.match(f.notice.textContent, /session storage could not be cleared/);
+  assert.equal(f.form.hidden, true);
+  assert.equal(f.results.children.length, 0);
+  assert.doesNotMatch(f.notice.textContent, /fixture removal denied/);
+});
+
+test('invalid saved local state is visible and can be replaced by explicit Connect', async t => {
+  const f = fixture(t, {sessionMap: new Map([['cortex.csrf', 'invalid']])});
+  assert.match(f.notice.textContent, /Saved local session is invalid/);
+  assert.equal(f.calls.length, 0);
+  await f.connectNow();
+  assert.equal(f.form.hidden, false);
+});
+
+test('only source alias and CSRF state persist, not results, query text or upstream credentials', async t => {
   for (const options of [{}, {saved: 'removed'}, {storageDenied: true}]) {
     await t.test(JSON.stringify(options), async t => {
       const f = fixture(t, options);
-      await f.launch();
+      await f.connectNow();
       if (options.saved) assert.match(f.preference.textContent, /not configured/);
       if (options.storageDenied) assert.match(f.preference.textContent, /unavailable/);
       assert.equal(f.form.hidden, false);
       if (!options.storageDenied) assert.deepEqual([...f.saved], [['cortex.source', 'example']]);
+      assert.deepEqual([...f.sessionMap.keys()], ['cortex.csrf']);
     });
   }
 });
 
 test('upstream denial during Connect does not expose Recall or fabricate connected state', async t => {
   const f = fixture(t);
-  await f.launch({ok: false, status: 403});
+  await f.connectNow({ok: false, status: 403});
   assert.match(f.notice.textContent, /denied/);
   assert.equal(f.form.hidden, true);
   assert.equal(f.results.children.length, 0);
 });
 
-test('bootstrap receiver requires exact opener, opaque file origin and one well-formed transfer', async t => {
-  const windowTarget = new Element();
-  const messages = [];
-  const opener = {postMessage: (body, target) => messages.push({body, target})};
-  windowTarget.opener = opener;
-  const requests = [];
-  let result;
-  let tick;
-  let cancelled = 0;
-  const dispose = receiveLaunch({
-    windowTarget, client: {request: async (operation, body) => {
-      requests.push({operation, credential: body.credential});
-      return trusted;
-    }},
-    onReady: receipt => { result = receipt; },
-    onError: () => assert.fail('unexpected bootstrap failure'),
-    schedule: fn => { tick = fn; return 42; }, cancel: id => { assert.equal(id, 42); cancelled++; }
+test('expired refresh clears saved state instead of silently creating another session', async t => {
+  const f = fixture(t, {
+    sessionMap: new Map([['cortex.csrf', 'c'.repeat(64)]]),
+    responses: [{ok: false, status: 401}]
   });
-  t.after(dispose);
-  const handler = windowTarget.handlers.get('message');
-  const valid = {source: opener, origin: 'null', data: {type: 'cortex-bootstrap', credential: 'a'.repeat(64)}};
-  for (const wrong of [
-    {...valid, source: {}}, {...valid, origin}, {...valid, origin: 'http://127.0.0.1:9999'},
-    {...valid, data: {type: 'cortex-bootstrap', credential: 'bad'}},
-    {...valid, data: {type: 'other', credential: 'a'.repeat(64)}}
-  ]) await handler(wrong);
-  assert.equal(requests.length, 0);
-  tick();
-  assert.ok(messages.every(({body}) => !JSON.stringify(body).includes('a'.repeat(64))));
-  await handler(valid);
-  await handler(valid);
-  assert.deepEqual(requests, [{operation: 'bootstrap', credential: 'a'.repeat(64)}]);
-  assert.equal(result, trusted);
-  assert.equal(windowTarget.opener, null);
-  assert.ok(cancelled > 0);
+  await new Promise(setImmediate);
+  assert.deepEqual(f.calls.map(call => call.url.split('/').at(-1)), ['resume']);
+  assert.equal(f.sessionMap.size, 0);
+  assert.equal(f.form.hidden, true);
+  assert.match(f.notice.textContent, /expired or revoked/);
 });
 
-test('bootstrap handshake timeout or failed redemption surfaces errors with no retry', async () => {
-  for (const fail of [false, true]) {
-    const windowTarget = Object.assign(new Element(), {opener: {postMessage() {}}});
-    let tick;
-    let errors = 0;
-    const dispose = receiveLaunch({
-      windowTarget, client: {request: async () => { throw new Error('synthetic denial'); }},
-      onReady: () => assert.fail('must not succeed'), onError: () => { errors++; },
-      schedule: fn => { tick = fn; return 1; }, cancel() {}
-    });
-    if (fail) {
-      await windowTarget.handlers.get('message')({
-        source: windowTarget.opener, origin: 'null', data: {type: 'cortex-bootstrap', credential: 'a'.repeat(64)}
-      });
-    } else for (let i = 0; i < 600; i++) tick();
-    assert.equal(errors, 1);
-    assert.equal(windowTarget.handlers.has('message'), false);
-    dispose();
-  }
-});
-
-test('disposed bootstrap receiver ignores late redemption responses', async () => {
-  const windowTarget = Object.assign(new Element(), {opener: {postMessage() {}}});
-  let finish;
-  const dispose = receiveLaunch({
-    windowTarget, client: {request: () => new Promise(resolve => { finish = resolve; })},
-    onReady: () => assert.fail('disposed view must not become trusted'),
-    onError: () => assert.fail('disposed view must not report late errors'),
-    schedule: () => 1, cancel() {}
-  });
-  const reading = windowTarget.handlers.get('message')({
-    source: windowTarget.opener, origin: 'null', data: {type: 'cortex-bootstrap', credential: 'a'.repeat(64)}
-  });
-  dispose();
-  finish(trusted);
-  await reading;
-  assert.equal(windowTarget.opener, null);
-});
-
-test('actual private-launch script sends its credential once only to the exact child origin', async () => {
-  const python = await readFile(new URL('../../brain_bridge/cortex_launch.py', import.meta.url), 'utf8');
-  const source = python.match(/script = """([\s\S]*?)"""/)[1];
-  const credential = 'd'.repeat(64);
-  const script = source.replace('ORIGIN', JSON.stringify(origin)).replace('CREDENTIAL', JSON.stringify(credential));
-  function fixture(blocked = false) {
-    const button = new Element();
-    const notice = new Element();
-    const messages = [];
-    const child = {postMessage: (body, target) => messages.push({body, target})};
-    const windowTarget = Object.assign(new Element(), {open: target => {
-      assert.equal(target, origin + '/');
-      assert.ok(!target.includes(credential));
-      return blocked ? null : child;
-    }});
-    let expire;
-    runInNewContext(script, {
-      document: {querySelector: selector => selector === 'button' ? button : notice},
-      window: windowTarget, setTimeout: fn => { expire = fn; return 1; }, clearTimeout() {}
-    });
-    return {button, notice, child, windowTarget, messages, expire};
-  }
-  const f = fixture();
-  f.button.fire('click');
-  const receive = f.windowTarget.handlers.get('message');
-  const valid = {source: f.child, origin, data: {type: 'cortex-ready'}};
-  receive({...valid, origin: 'http://127.0.0.1:9999'});
-  receive({...valid, source: {}});
-  assert.equal(f.messages.length, 0);
-  receive(valid);
-  receive(valid);
-  assert.equal(f.messages.length, 1);
-  assert.equal(f.messages[0].target, origin);
-  assert.equal(f.messages[0].body.credential, credential);
-  receive({...valid, data: {type: 'cortex-bootstrap-complete'}});
-  assert.match(f.notice.textContent, /connecting in the new tab/);
-  const expired = fixture();
-  expired.button.fire('click');
-  expired.expire();
-  expired.windowTarget.handlers.get('message')({source: expired.child, origin, data: {type: 'cortex-ready'}});
-  assert.equal(expired.messages.length, 0);
-  assert.match(expired.notice.textContent, /expired/);
-  const blocked = fixture(true);
-  blocked.button.fire('click');
-  assert.match(blocked.notice.textContent, /blocked/);
-  assert.equal(blocked.button.disabled, false);
+test('local expiry clears displayed data and session state at the returned fixed lifetime', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const f = fixture(t);
+  await f.connectNow(response(status), {...connected, expires_in_seconds: 2});
+  assert.equal(f.form.hidden, false);
+  t.mock.timers.tick(2000);
+  assert.equal(f.form.hidden, true);
+  assert.equal(f.sessionMap.size, 0);
+  assert.equal(f.source.textContent, '');
+  assert.match(f.notice.textContent, /Connection expired/);
 });

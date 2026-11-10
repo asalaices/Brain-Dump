@@ -35,7 +35,7 @@ PR-only; no private master-01 checkout is required for the packaged operator.
 
 An initial [Cortex web foundation](docs/CORTEX-WEB.md) provides a common `web/`
 structure, six shared themes and reusable request-driven API activity components.
-An optional trusted-launch local pilot connects source status and bounded cited
+An optional owner-only loopback pilot connects source status and bounded cited
 Recall to the existing authorized Brain Bridge functions. It is not a shared
 service, new source grant or complete Cortex application.
 
@@ -44,10 +44,10 @@ manage a loopback-only static preview with verified ownership and readiness.
 Python 3.11+ is required; Windows uses `python cortex_server`.
 See [Cortex setup and lifecycle](docs/CORTEX-WEB.md#run-and-test) for configuration
 and limits, including explicit external-profile selection. Open the Cortex URL
-and click **Connect to Brain**; approve the private page opened by the existing
-native browser launcher, and Cortex connects automatically in a trusted tab.
-Routine use requires no terminal or pairing command; `--open` is an optional
-operator shortcut.
+and click **Connect to Brain**. Connection happens in that page and survives
+refresh; **Disconnect** revokes the local session and clears displayed data.
+No popup, file page, terminal or separate approval is required. `--open` is an
+optional operator shortcut to the ordinary Cortex URL.
 This does not install a service or complete the planned product API.
 
 The full enterprise roadmap remains the target; this is a development foundation.

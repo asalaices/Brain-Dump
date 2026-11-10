@@ -11,16 +11,14 @@ export function citationUrl(value) {
 
 export function validateReceipt(value) {
   if (!value || value.schema_version !== 1) throw new TypeError('Unsupported local API response.');
-  if (['pairing_required', 'paired', 'trusted'].includes(value.status)) {
-    if (!/^[a-f0-9]{32}$/.test(value.pairing_id) || !Number.isInteger(value.expires_in_seconds) ||
+  if (value.status === 'connected') {
+    if (!Number.isInteger(value.expires_in_seconds) ||
         value.expires_in_seconds < 0 || value.expires_in_seconds > 1800) {
-      throw new TypeError('Invalid browser pairing response.');
+      throw new TypeError('Invalid local session response.');
     }
-    if (value.status === 'trusted' || value.sources !== undefined) {
-      if (!Array.isArray(value.sources) || value.sources.length !== 1 ||
-          typeof value.sources[0] !== 'string' || !value.sources[0].trim() || value.sources[0].length > 128) {
-        throw new TypeError('Invalid configured Brain selection.');
-      }
+    if (!Array.isArray(value.sources) || value.sources.length !== 1 ||
+        typeof value.sources[0] !== 'string' || !value.sources[0].trim() || value.sources[0].length > 128) {
+      throw new TypeError('Invalid configured Brain selection.');
     }
   } else if (['ready', 'found', 'no_match'].includes(value.status)) {
     if (value.read_only !== true || !value.request_id || !value.source?.name ||
@@ -48,13 +46,17 @@ export function validateReceipt(value) {
         }
       }
     }
-  } else if (!['disconnected', 'launch_requested'].includes(value.status)) {
+  } else if (value.status !== 'disconnected') {
     throw new TypeError('Unexpected local API outcome.');
   }
   return value;
 }
 
-export function createSynapsesClient({origin, activity, fetchImpl}) {
+export class BrowserSessionError extends Error {}
+
+export function createSynapsesClient({
+  origin, activity, fetchImpl, getSessionStorage = () => globalThis.sessionStorage
+}) {
   const base = new URL(origin);
   if (base.protocol !== 'http:' || base.hostname !== '127.0.0.1' || base.origin !== origin) {
     throw new TypeError('The local pilot requires its exact IPv4 loopback origin.');
@@ -63,13 +65,39 @@ export function createSynapsesClient({origin, activity, fetchImpl}) {
     baseUrl: `${origin}/api/local/`, pageOrigin: origin, credentials: 'same-origin',
     activity, fetchImpl, validateJson: validateReceipt
   });
-  // Loopback cookies are shared across ports. Bind reads to this tab's in-memory key too.
-  const browserKey = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  let browserKey;
+  const stored = operation => {
+    try {
+      return operation(getSessionStorage());
+    } catch (error) {
+      throw new BrowserSessionError('Browser session storage is unavailable. Enable it to connect and remain connected on refresh.', {cause: error});
+    }
+  };
+  const readKey = () => {
+    const key = stored(storage => storage.getItem('cortex.csrf'));
+    if (key !== null && !/^[a-f0-9]{64}$/.test(key)) {
+      throw new BrowserSessionError('Saved local session is invalid. Click Connect to Brain to replace it.');
+    }
+    return key;
+  };
   return Object.freeze({
+    hasSession() { return readKey() !== null; },
+    clearSession() {
+      browserKey = undefined;
+      stored(storage => storage.removeItem('cortex.csrf'));
+    },
     request(operation, body = {}, signal) {
-      if (!['launch', 'bootstrap', 'session', 'disconnect', 'status', 'synapse'].includes(operation)) {
+      if (!['session', 'resume', 'disconnect', 'status', 'synapse'].includes(operation)) {
         throw new TypeError('Unsupported local read operation.');
       }
+      if (operation === 'session') {
+        browserKey = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
+        stored(storage => storage.setItem('cortex.csrf', browserKey));
+      } else {
+        browserKey ??= readKey();
+        if (!browserKey) throw new BrowserSessionError('No local session. Click Connect to Brain.');
+      }
+      // Cookies have no port scope; the CSRF key stays in this origin's sessionStorage.
       return client.requestJson(operation, {
         method: 'POST', headers: {
           'Content-Type': 'application/json', 'X-Cortex-Read-Only': '1', 'X-Cortex-Browser': browserKey
