@@ -9,5 +9,12 @@ version 3 only (AGPL-3.0-only). See LICENSE for the unmodified license text.
 Preserve applicable copyright, license and author notices in covered copies.
 Identify modifications and preserve contributors' applicable notices.
 
+The Cortex web foundation adapts selected software palette tokens and API
+activity UI patterns from asalaices/master-01 and asalaices/Simple-Todos,
+with the owner's permission for AGPL-3.0-only distribution. The adaptation
+changes activity to explicit per-page request lifecycle tracking and excludes
+infrastructure telemetry, private data and runtime configuration.
+See docs/CORTEX-WEB.md for source revisions and modification details.
+
 The software license does not grant access to, or relicense, private Synapses
 records, customer information, credentials or independently owned content.

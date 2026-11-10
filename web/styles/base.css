@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--background); color: var(--text); font: 1rem/1.6 system-ui, sans-serif; }
+header, main, footer { max-width: 72rem; margin: auto; padding: 1.5rem; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+h1, h2, p { margin: 0 0 1rem; }
+h1 { margin: 0; }
+.eyebrow { color: var(--accent); margin: 0; letter-spacing: .08em; }
+.controls { display: flex; gap: 1rem; align-items: end; flex-wrap: wrap; }
+label { display: grid; gap: .25rem; }
+button, select { font: inherit; background: var(--surface-raised); color: var(--text); border: 1px solid var(--border); border-radius: .5rem; min-height: 2.75rem; padding: .5rem .75rem; }
+button { cursor: pointer; display: inline-flex; gap: .75rem; align-items: center; text-align: left; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+section { background: var(--surface); padding: 1.5rem; border: 1px solid var(--border); border-radius: .75rem; margin-bottom: 1.5rem; }
+.notice { border-left: 3px solid var(--warning); padding-left: 1rem; }
+footer, #theme-notice { color: var(--muted); }
+[hidden] { display: none !important; }
+.skip-link { position: absolute; top: -5rem; left: 1rem; background: var(--surface); color: var(--text); padding: .5rem; }
+.skip-link:focus { top: .5rem; }
+.activity-dot { flex: 0 0 13px; width: 13px; height: 13px; border-radius: 50%; background: var(--muted); }
+#api-status[data-state="idle"] .activity-dot { background: var(--healthy); }
+#api-status[data-state="error"] .activity-dot { background: var(--danger); }
+#api-status[data-state="cancelled"] .activity-dot { background: var(--warning); }
+#api-status[data-active="true"] .activity-dot { background: var(--danger); animation: request-throb .8s ease-in-out infinite; }
+@keyframes request-throb { 50% { transform: scale(1.55); opacity: .65; } }
+@media (prefers-reduced-motion: reduce) {
+  #api-status[data-active="true"] .activity-dot { animation: none; }
+}
+@media (max-width: 40rem) {
+  header, main, footer { padding: 1rem; }
+  .controls, #api-status { width: 100%; }
+}

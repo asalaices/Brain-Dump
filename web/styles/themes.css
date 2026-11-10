@@ -1,0 +1,81 @@
+/* SPDX-License-Identifier: AGPL-3.0-only
+ * Selected master-01 software palette tokens, adapted for Cortex.
+ * See docs/CORTEX-WEB.md for provenance and intentional differences. */
+:root, :root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #07100f;
+  --surface: #0d1a18;
+  --surface-raised: #132321;
+  --border: #25413c;
+  --text: #f3f7f5;
+  --muted: #91aaa4;
+  --accent: #e5a84b;
+  --healthy: #55d6a7;
+  --warning: #ff9f43;
+  --danger: #ff7d73;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: #edf3f2;
+  --surface: #ffffff;
+  --surface-raised: #f8fbfa;
+  --border: #b9ceca;
+  --text: #172d2a;
+  --muted: #4a6761;
+  --accent: #925a0c;
+  --healthy: #086c4e;
+  --warning: #9d4b05;
+  --danger: #ab342f;
+}
+:root[data-theme="ocean"] {
+  color-scheme: dark;
+  --background: #071723;
+  --surface: #0c2434;
+  --surface-raised: #143346;
+  --border: #315363;
+  --text: #edf8ff;
+  --muted: #9fc0d4;
+  --accent: #65c8ff;
+  --healthy: #60d6b4;
+  --warning: #ffae73;
+  --danger: #ff8c97;
+}
+:root[data-theme="midnight"] {
+  color-scheme: dark;
+  --background: #0b0d19;
+  --surface: #151a2d;
+  --surface-raised: #1d253f;
+  --border: #343e5e;
+  --text: #f0f3ff;
+  --muted: #abb6d3;
+  --accent: #9cafff;
+  --healthy: #67dbad;
+  --warning: #ffad7a;
+  --danger: #ff91a0;
+}
+:root[data-theme="plum"] {
+  color-scheme: dark;
+  --background: #190f1f;
+  --surface: #28182f;
+  --surface-raised: #35233e;
+  --border: #5d3c64;
+  --text: #fff2fb;
+  --muted: #cfb2d1;
+  --accent: #f0a3d5;
+  --healthy: #85dcba;
+  --warning: #ffb681;
+  --danger: #ff9d9b;
+}
+:root[data-theme="sand"] {
+  color-scheme: light;
+  --background: #f3eee3;
+  --surface: #fffcf5;
+  --surface-raised: #f9f3e8;
+  --border: #ccbea7;
+  --text: #332b23;
+  --muted: #6c5c4a;
+  --accent: #855112;
+  --healthy: #226647;
+  --warning: #95461a;
+  --danger: #a52f3c;
+}

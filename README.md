@@ -33,6 +33,11 @@ PR-only; no private master-01 checkout is required for the packaged operator.
 
 ## Current implementation
 
+An initial [Cortex web foundation](docs/CORTEX-WEB.md) provides a common `web/`
+structure, six shared themes and reusable request-driven API activity components.
+It is a static, unconnected foundation: no product API, private source access or
+complete Cortex application is claimed.
+
 The full enterprise roadmap remains the target; this is a development foundation.
 [Managed source documentation](docs/MANAGED-SOURCES.md) describes the implemented
 identity, separate default-deny grants, authenticated policy refresh, source-ID
