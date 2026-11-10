@@ -2,14 +2,21 @@
 # Copyright (C) 2026 Creative Software Development
 """Short-lived owner-private launch document; credentials never enter a URL."""
 import hashlib
+from html import escape
 import json
 import os
 from pathlib import Path
 import secrets
 import tempfile
+import webbrowser
 
 
-def create_document(runtime, origin, credential):
+def open_document(path):
+    if not webbrowser.open(path.as_uri(), new=2):
+        raise ValueError('The native browser did not accept the private approval page.')
+
+
+def create_document(runtime, origin, credential, source):
     nonce = secrets.token_hex(16)
     script = """
 const origin = ORIGIN;
@@ -21,7 +28,7 @@ const notice = document.querySelector('[role="status"]');
 const timer = setTimeout(() => {
   credential = null;
   button.disabled = true;
-  notice.textContent = 'This launch expired. Open Cortex again through its launcher.';
+  notice.textContent = 'This approval expired. Return to Cortex and click Connect to Brain again.';
 }, 60000);
 button.addEventListener('click', () => {
   child = window.open(origin + '/', '_blank');
@@ -40,7 +47,7 @@ window.addEventListener('message', event => {
     transferred = true;
   } else if (event.data?.type === 'cortex-bootstrap-complete' && transferred) {
     clearTimeout(timer);
-    notice.textContent = 'Cortex is ready in the new tab. You may close this launch page.';
+    notice.textContent = 'Approved. Cortex is connecting in the new tab. You may close this approval page.';
   }
 });
 """.replace('ORIGIN', json.dumps(origin)).replace('CREDENTIAL', json.dumps(credential))
@@ -48,11 +55,14 @@ window.addEventListener('message', event => {
 <html lang="en"><head><meta charset="utf-8">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-{nonce}'; base-uri 'none'; form-action 'none'">
-<title>Open Cortex securely</title></head><body>
-<h1>Open Cortex</h1>
-<p>This private launch expires in one minute. No Brain access grant is created.</p>
-<button type="button">Open Cortex</button>
-<p role="status">Open the trusted local tab, then select your configured Brain and Connect.</p>
+<title>Approve Cortex connection</title></head><body>
+<h1>Connect Cortex to your Brain</h1>
+<p>Approve a read-only connection to <strong>{escape(source)}</strong>
+through Cortex at {escape(origin)}. Existing Brain permissions still apply;
+this does not create an access grant.</p>
+<button type="button">Approve connection</button>
+<p role="status">Approval expires in one minute. The connected Cortex tab opens automatically.</p>
+<p><a href="{escape(origin)}/" rel="noreferrer">Back to Cortex</a></p>
 <script nonce="{nonce}">{script}</script>
 </body></html>
 """

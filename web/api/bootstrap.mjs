@@ -31,8 +31,11 @@ export function receiveLaunch({
     try {
       const receipt = await client.request('bootstrap', body);
       if (disposed) return;
-      onReady(receipt);
+      body.credential = '';
+      windowTarget.opener = null;
+      const ready = onReady(receipt);
       opener.postMessage({type: 'cortex-bootstrap-complete'}, '*');
+      await ready;
     } catch {
       if (!disposed) onError();
     } finally {

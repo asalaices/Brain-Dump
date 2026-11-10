@@ -43,9 +43,11 @@ From a source checkout, `./cortex_server --start`, `--status` and `--stop`
 manage a loopback-only static preview with verified ownership and readiness.
 Python 3.11+ is required; Windows uses `python cortex_server`.
 See [Cortex setup and lifecycle](docs/CORTEX-WEB.md#run-and-test) for configuration
-and limits, including explicit external-profile selection and `--open` for a
-private one-click launch. The UI then selects the configured Brain and Connects;
-routine use requires no pairing command.
+and limits, including explicit external-profile selection. Open the Cortex URL
+and click **Connect to Brain**; approve the private page opened by the existing
+native browser launcher, and Cortex connects automatically in a trusted tab.
+Routine use requires no terminal or pairing command; `--open` is an optional
+operator shortcut.
 This does not install a service or complete the planned product API.
 
 The full enterprise roadmap remains the target; this is a development foundation.

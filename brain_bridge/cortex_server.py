@@ -27,6 +27,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from . import __version__
 from .connectors import NoRedirect
+from .cortex_launch import open_document
 from .installation.discovery import safe
 from .reconciliation import _lock as runtime_lock, _save as save_state
 from .cortex_synapses import LocalSynapses, PREFIX, handle as handle_synapses, load_profile
@@ -366,13 +367,12 @@ def operate(action, runtime, port, profile=None, pair=None):
                 if path.parent != runtime or not re.fullmatch(r'launch-[\w-]+\.html', path.name):
                     raise ValueError('Invalid private Cortex launch file.')
                 private_file(path)
-                if not webbrowser.open(path.as_uri(), new=2):
-                    raise ValueError('The native browser did not accept the private launch page.')
+                open_document(path)
             except (OSError, ValueError, webbrowser.Error):
                 control(state, launch='cancel')
                 raise
             return {**public_state(state), 'browser': 'launch_requested',
-                    'message': 'Click Open Cortex on the private launch page, then select your Brain and Connect.'}, 0
+                    'message': 'Click Approve connection on the private page; Cortex connects automatically.'}, 0
         if action == 'stop':
             if running:
                 control(state, stop=True)

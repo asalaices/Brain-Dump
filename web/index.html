@@ -40,13 +40,13 @@
       <p>Read source status and request cited context through the existing Brain Bridge
         authority. This is not a shared service, source grant or complete Cortex application.</p>
       <div class="controls">
-        <label for="synapses-brain">Configured Brain
-          <select id="synapses-brain" disabled><option value="">Open through the launcher</option></select>
+        <label id="synapses-brain-control" for="synapses-brain" hidden>Configured Brain
+          <select id="synapses-brain" disabled><option value="">Awaiting approval</option></select>
         </label>
-        <button id="synapses-connect" type="button" disabled>Connect</button>
+        <button id="synapses-connect" type="button">Connect to Brain</button>
         <button id="synapses-disconnect" type="button" hidden>Disconnect</button>
       </div>
-      <p id="synapses-notice" class="notice" role="status">Not connected. Open Cortex through its launcher to establish a trusted local tab, then select your Brain and Connect.</p>
+      <p id="synapses-notice" class="notice" role="status">Not connected. Click Connect to Brain, then approve the connection on the private page your browser opens. Cortex connects automatically; no terminal command is needed.</p>
       <p id="synapses-preference" role="status"></p>
       <p id="synapses-pairing"></p>
       <p id="synapses-source"></p>
@@ -58,7 +58,7 @@
       </form>
       <ol id="synapses-results" aria-label="Cited Synapses matches"></ol>
     </section>
-    <noscript><p class="notice">JavaScript is required for theme selection and API activity details.</p></noscript>
+    <noscript><p class="notice">JavaScript is required to connect to Brain, select themes and show API activity.</p></noscript>
   </main>
   <footer>Development foundation - not a complete Cortex application.</footer>
 </body>

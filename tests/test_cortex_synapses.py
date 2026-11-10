@@ -123,6 +123,76 @@ class LocalSynapsesTests(unittest.TestCase):
         self.assertEqual(self.post('bootstrap', {'credential': credential})[0], 200)
         self.assertFalse(path.exists())
 
+    def test_approval_names_exact_source_and_origin_as_text_and_provides_return_navigation(self):
+        self.app.profile['source'] = '<script>synthetic</script>'
+        _, _, html = self.bootstrap()
+        self.assertIn('&lt;script&gt;synthetic&lt;/script&gt;', html)
+        self.assertNotIn('<script>synthetic</script>', html)
+        self.assertIn(f'href="http://127.0.0.1:{self.http.server_port}/"', html)
+        self.assertIn('Approve connection', html)
+        self.assertIn('Back to Cortex', html)
+
+    def test_browser_launch_intent_opens_approval_but_cannot_authorize_its_caller(self):
+        with patch.object(server.webbrowser, 'open', return_value=True) as opened:
+            code, result, headers = self.post('launch')
+            self.assertEqual((code, result), (202, {'schema_version': 1, 'status': 'launch_requested'}))
+            self.assertNotIn('Set-Cookie', headers)
+            self.assertEqual(self.app.sessions, {})
+            path = next(self.runtime.glob('launch-*.html'))
+            self.assertEqual(opened.call_args.args[0], path.as_uri())
+            self.assertEqual(self.post('launch')[0], 429)
+            self.assertEqual(opened.call_count, 1)
+            self.assertTrue(path.exists())
+        self.assertEqual(self.post('session', {'source': 'example'})[0], 401)
+        self.assertEqual(self.post('status')[0], 401)
+        credential = re.search(r'let credential = "([a-f0-9]{64})";', path.read_text()).group(1)
+        self.assertNotIn(credential, json.dumps(result))
+        code, _, headers = self.post('bootstrap', {'credential': credential},
+                                     headers={'X-Cortex-Browser': '4' * 64})
+        self.assertEqual(code, 200)
+        cookie = headers['Set-Cookie'].split(';')[0]
+        self.assertEqual(self.post('session', {'source': 'example'}, cookie)[0], 401)
+        self.assertEqual(self.post('session', {'source': 'example'}, cookie,
+                                   headers={'X-Cortex-Browser': '4' * 64})[0], 200)
+        self.status.assert_not_called()
+        self.synapse.assert_not_called()
+
+    def test_browser_launch_rejects_untrusted_origins_paths_and_unconfigured_runtime(self):
+        with patch.object(server.webbrowser, 'open', return_value=True) as opened:
+            for fields in ({'Origin': 'http://example.invalid'}, {'Origin': 'null'},
+                           {'Origin': 'http://127.0.0.1:9999'}, {'Host': 'example.invalid'},
+                           {'X-Cortex-Browser': ''}):
+                self.assertEqual(self.post('launch', headers=fields)[0], 403)
+            for body in ({'path': '/synthetic'}, {'source': 'other'}, {'browser_id': '3' * 64}):
+                self.assertEqual(self.post('launch', body)[0], 400)
+            self.app.profile = None
+            self.assertEqual(self.post('launch')[0], 503)
+            self.app.profile = dict(PROFILE)
+            self.http.runtime = None
+            with self.assertLogs(local.LOG, level='WARNING'):
+                self.assertEqual(self.post('launch')[0], 503)
+            opened.assert_not_called()
+        self.assertEqual(list(self.runtime.glob('launch-*.html')), [])
+        self.assertEqual(self.app.sessions, {})
+
+    def test_browser_launch_failure_cleans_its_own_approval_without_leaking_details(self):
+        for error in (False, OSError('synthetic private native details')):
+            with patch.object(server.webbrowser, 'open', side_effect=error if isinstance(error, Exception) else None,
+                              return_value=error), self.assertLogs(local.LOG, level='WARNING') as logs:
+                code, result, _ = self.post('launch')
+            self.assertEqual((code, result['status']), (503, 'launch_unavailable'))
+            self.assertNotIn('synthetic private', json.dumps(result) + ''.join(logs.output))
+            self.assertIsNone(self.app.bootstrap)
+            self.assertEqual(list(self.runtime.glob('launch-*.html')), [])
+        def replaced(*args, **kwargs):
+            self.app.launch(self.runtime, f'http://127.0.0.1:{self.http.server_port}')
+            raise OSError('synthetic late native error')
+        with patch.object(server.webbrowser, 'open', side_effect=replaced), self.assertLogs(local.LOG, level='WARNING'):
+            self.assertEqual(self.post('launch')[0], 503)
+        self.assertIsNotNone(self.app.bootstrap)
+        self.assertEqual(len(list(self.runtime.glob('launch-*.html'))), 1)
+        self.status.assert_not_called()
+
     def test_native_launch_failure_cancels_bootstrap_and_leaves_server_running(self):
         (self.runtime / 'state.json').write_text(json.dumps(self.state))
         (self.runtime / 'state.json').chmod(0o600)

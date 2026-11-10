@@ -45,7 +45,7 @@ class Element {
 }
 
 function fixture(t, options = {}) {
-  const ids = ['connect', 'disconnect', 'form', 'query', 'search', 'notice', 'pairing', 'source', 'results', 'brain', 'preference'];
+  const ids = ['connect', 'disconnect', 'form', 'query', 'search', 'notice', 'pairing', 'source', 'results', 'brain', 'brain-control', 'preference'];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   elements.form.hidden = true;
   const documentTarget = {
@@ -57,7 +57,7 @@ function fixture(t, options = {}) {
   const queue = [];
   const saved = new Map(options.saved ? [['cortex.source', options.saved]] : []);
   const opener = {postMessage() {}};
-  const windowTarget = Object.assign(new Element(), {opener});
+  const windowTarget = Object.assign(new Element(), {opener: options.fresh ? null : opener});
   const dispose = bindSynapses({
     activity, documentTarget, getOrigin: () => origin, windowTarget,
     getStorage: () => {
@@ -72,8 +72,8 @@ function fixture(t, options = {}) {
     }
   });
   t.after(dispose);
-  const launch = async () => {
-    queue.push(response(trusted));
+  const launch = async (upstream = response(status)) => {
+    queue.push(response(trusted), response(paired), upstream);
     await windowTarget.handlers.get('message')({
       source: opener, origin: 'null', data: {type: 'cortex-bootstrap', credential: 'd'.repeat(64)}
     });
@@ -159,19 +159,42 @@ test('private excerpts render as text with safe immutable citations and superses
   assert.equal('innerHTML' in quote, false);
 });
 
-test('trusted launch replaces CLI pairing; selected configured Brain connects through real activity', async t => {
-  const f = fixture(t);
+test('ordinary Cortex entry has enabled Connect and requests independent approval, never self-authorization', async t => {
+  const f = fixture(t, {fresh: true});
   assert.equal(f.calls.length, 0);
-  assert.equal(f.connect.disabled, true);
+  assert.equal(f.connect.disabled, false);
+  assert.equal(f['brain-control'].hidden, true);
+  f.queue.push(response({schema_version: 1, status: 'launch_requested'}));
   await f.connect.fire('click');
+  assert.equal(f.calls[0].url, `${origin}/api/local/launch`);
+  assert.deepEqual(JSON.parse(f.calls[0].options.body), {});
+  assert.match(f.notice.textContent, /Approve connection/);
+  assert.match(f.notice.textContent, /original tab remains disconnected/);
+  assert.equal(f.form.hidden, true);
+  assert.equal(f.disconnect.hidden, true);
+  assert.equal(f.source.textContent, '');
+  assert.equal(f.saved.size, 0);
+  assert.equal(f.activity.snapshot().completed, 1);
+});
+
+test('native approval failure and already-pending approval offer an explicit retry, not a dead control', async t => {
+  for (const code of [503, 429]) {
+    const f = fixture(t, {fresh: true});
+    f.queue.push({ok: false, status: code});
+    await f.connect.fire('click');
+    assert.match(f.notice.textContent, code === 429 ? /already waiting/ : /could not open/);
+    assert.equal(f.form.hidden, true);
+    assert.equal(f.connect.disabled, false);
+  }
+});
+
+test('approved tab automatically connects configured Brain without another click through real activity', async t => {
+  const f = fixture(t);
   assert.equal(f.calls.length, 0);
   await f.launch();
   assert.equal(f.brain.value, 'example');
   assert.equal(f.connect.disabled, false);
   assert.doesNotMatch(f.notice.textContent + f.pairing.textContent, /--pair/);
-  assert.equal(f.form.hidden, true);
-  f.queue.push(response(paired), response(status));
-  await f.connect.fire('click');
   assert.deepEqual(JSON.parse(f.calls[1].options.body), {source: 'example'});
   assert.equal(f.form.hidden, false);
   assert.match(f.source.textContent, /Source verified and synchronized/);
@@ -190,8 +213,6 @@ test('denial, unavailable, malformed and expired responses clear previously disp
     await t.test(String(code), async t => {
       const f = fixture(t);
       await f.launch();
-      f.queue.push(response(paired), response(status));
-      await f.connect.fire('click');
       f.queue.push(response(found));
       f.query.value = 'first';
       await f.form.fire('submit');
@@ -209,8 +230,6 @@ test('denial, unavailable, malformed and expired responses clear previously disp
 test('disconnect cancels in-flight browser reads, clears data and ignores late replies', async t => {
   const f = fixture(t);
   await f.launch();
-  f.queue.push(response(paired), response(status));
-  await f.connect.fire('click');
   let finish;
   f.queue.push(() => new Promise(resolve => { finish = resolve; }));
   f.query.value = 'private query';
@@ -238,8 +257,6 @@ test('only the source alias is remembered; unavailable storage and removed sourc
       await f.launch();
       if (options.saved) assert.match(f.preference.textContent, /not configured/);
       if (options.storageDenied) assert.match(f.preference.textContent, /unavailable/);
-      f.queue.push(response(paired), response(status));
-      await f.connect.fire('click');
       assert.equal(f.form.hidden, false);
       if (!options.storageDenied) assert.deepEqual([...f.saved], [['cortex.source', 'example']]);
     });
@@ -248,9 +265,7 @@ test('only the source alias is remembered; unavailable storage and removed sourc
 
 test('upstream denial during Connect does not expose Recall or fabricate connected state', async t => {
   const f = fixture(t);
-  await f.launch();
-  f.queue.push(response(paired), {ok: false, status: 403});
-  await f.connect.fire('click');
+  await f.launch({ok: false, status: 403});
   assert.match(f.notice.textContent, /denied/);
   assert.equal(f.form.hidden, true);
   assert.equal(f.results.children.length, 0);
@@ -367,7 +382,7 @@ test('actual private-launch script sends its credential once only to the exact c
   assert.equal(f.messages[0].target, origin);
   assert.equal(f.messages[0].body.credential, credential);
   receive({...valid, data: {type: 'cortex-bootstrap-complete'}});
-  assert.match(f.notice.textContent, /ready in the new tab/);
+  assert.match(f.notice.textContent, /connecting in the new tab/);
   const expired = fixture();
   expired.button.fire('click');
   expired.expire();

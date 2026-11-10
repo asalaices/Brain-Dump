@@ -14,10 +14,11 @@ import stat
 import subprocess
 import threading
 import time
+import webbrowser
 from uuid import uuid4
 
 from .adapters import managed_status
-from .cortex_launch import create_document
+from .cortex_launch import create_document, open_document
 from .installation.discovery import safe
 from .policy import AccessDenied, AuthorizationUnavailable
 from .store import unique_object, reject_constant
@@ -74,16 +75,19 @@ class LocalSynapses:
         now = self.clock()
         self.sessions = {key: value for key, value in self.sessions.items() if value['expires'] > now}
 
-    def launch(self, runtime, origin):
+    def launch(self, runtime, origin, replace=True):
         if self.profile is None:
             raise ValueError('Start Cortex with an external consultation profile before opening its connected UI.')
         if runtime is None:
             raise ValueError('Restart Cortex to enable its private native browser launcher.')
         with self.lock:
+            if self.bootstrap and self.bootstrap['expires'] > self.clock() and not replace:
+                return None
             self._cancel_launch()
             credential = secrets.token_hex(32)
-            path, cleanup = create_document(runtime, origin, credential)
-            self.bootstrap = {'credential': credential, 'expires': self.clock() + 60, 'cleanup': cleanup}
+            path, cleanup = create_document(runtime, origin, credential, self.profile['source'])
+            self.bootstrap = {'credential': credential, 'path': str(path),
+                              'expires': self.clock() + 60, 'cleanup': cleanup}
             timer = threading.Timer(60, self.cancel_launch, args=(credential,))
             timer.daemon = True
             self.bootstrap['timer'] = timer
@@ -96,10 +100,26 @@ class LocalSynapses:
             self.bootstrap['cleanup']()
             self.bootstrap = None
 
-    def cancel_launch(self, credential=None):
+    def cancel_launch(self, credential=None, path=None):
         with self.lock:
-            if credential is None or (self.bootstrap and hmac.compare_digest(self.bootstrap['credential'], credential)):
+            if ((credential is None or (self.bootstrap and hmac.compare_digest(self.bootstrap['credential'], credential)))
+                    and (path is None or (self.bootstrap and self.bootstrap['path'] == path))):
                 self._cancel_launch()
+
+    def request_launch(self, runtime, origin):
+        launch = None
+        try:
+            launch = self.launch(runtime, origin, replace=False)
+            if launch is None:
+                return 429, {'status': 'launch_pending'}
+            open_document(Path(launch['launch_file']))
+        except (OSError, ValueError, webbrowser.Error) as error:
+            if launch is not None:
+                self.cancel_launch(path=launch['launch_file'])
+            LOG.warning('Native Cortex approval failed category=%s; private details omitted.', type(error).__name__)
+            return 503, {'status': 'launch_unavailable'}
+        # Initiating approval gives this caller neither a credential nor a session.
+        return 202, {'status': 'launch_requested'}
 
     def redeem(self, credential, browser_key):
         with self.lock:
@@ -256,7 +276,7 @@ def handle(handler):
         reply(handler, 503, {'status': 'not_configured'})
         return
     endpoint = handler.path.removeprefix(PREFIX)
-    if endpoint not in ('bootstrap', 'session', 'disconnect', 'status', 'synapse'):
+    if endpoint not in ('launch', 'bootstrap', 'session', 'disconnect', 'status', 'synapse'):
         reply(handler, 404, {'status': 'not_found'})
         return
     if handler.headers.get('Content-Type') != 'application/json' or handler.headers.get('Transfer-Encoding') is not None:
@@ -278,7 +298,10 @@ def handle(handler):
         reply(handler, 400, {'status': 'invalid_request'})
         return
     token = cookie_token(handler.headers)
-    if endpoint == 'bootstrap':
+    if endpoint == 'launch':
+        code, result = app.request_launch(handler.server.runtime, 'http://' + host)
+        reply(handler, code, result)
+    elif endpoint == 'bootstrap':
         selected, result = app.redeem(body['credential'], browser_key)
         reply(handler, 200 if selected else 401, result, token=selected)
     elif endpoint == 'session' and 'source' in body:

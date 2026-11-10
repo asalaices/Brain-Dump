@@ -38,6 +38,7 @@ export function bindSynapses({
   const source = select('synapses-source');
   const results = select('synapses-results');
   const brain = select('synapses-brain');
+  const brainControl = select('synapses-brain-control');
   const preference = select('synapses-preference');
   let client;
   let controller;
@@ -46,10 +47,10 @@ export function bindSynapses({
   let paired = false;
   let trusted = false;
 
-  function remember() {
+  function remember(preserveNotice = false) {
     try {
       getStorage().setItem('cortex.source', brain.value);
-      preference.textContent = '';
+      if (preserveNotice !== true) preference.textContent = '';
     } catch {
       preference.textContent = 'Source preference storage is unavailable. Selection lasts only for this page.';
     }
@@ -76,9 +77,9 @@ export function bindSynapses({
     expires = setTimeout(() => {
       trusted = false;
       forget();
-      notice.textContent = 'Local session expired. Reopen Cortex through its launcher; displayed private data was cleared.';
+      notice.textContent = 'Connection expired. Click Connect to Brain to reconnect; displayed private data was cleared.';
     }, receipt.expires_in_seconds * 1000);
-    notice.textContent = 'Trusted local tab ready. Select the configured Brain and Connect. Upstream access is checked on every read.';
+    notice.textContent = 'Approval received. Checking existing access to your configured Brain...';
     controls();
   }
 
@@ -89,11 +90,12 @@ export function bindSynapses({
   }
 
   function controls(busy = false) {
-    connect.disabled = busy || !trusted;
+    connect.disabled = busy;
+    brainControl.hidden = !trusted;
     brain.disabled = busy || !trusted || paired;
     submit.disabled = busy || !paired;
     form.hidden = !paired;
-    disconnect.hidden = !client;
+    disconnect.hidden = !trusted;
   }
 
   function forget() {
@@ -102,7 +104,7 @@ export function bindSynapses({
     paired = false;
     clear();
     query.value = '';
-    connect.textContent = 'Connect';
+    connect.textContent = 'Connect to Brain';
     controls();
   }
 
@@ -128,10 +130,12 @@ export function bindSynapses({
       client ??= createSynapsesClient({origin: getOrigin(), activity, fetchImpl});
       const receipt = await client.request(operation, body, signal);
       if (current !== generation) return;
-      if (receipt.status === 'pairing_required') {
+      if (receipt.status === 'launch_requested') {
+        notice.textContent = 'Your browser is opening a private approval page. Click Approve connection there; Cortex connects automatically in a new tab. This original tab remains disconnected.';
+      } else if (receipt.status === 'pairing_required') {
         paired = false;
         trusted = false;
-        notice.textContent = 'Reopen Cortex through its launcher to establish a trusted tab. Git access remains required upstream.';
+        notice.textContent = 'Connection needs approval. Click Connect to Brain. Existing Brain access remains required.';
       } else if (receipt.status === 'paired') {
         trust(receipt);
         controls(true);
@@ -139,7 +143,7 @@ export function bindSynapses({
         if (current !== generation) return;
         paired = true;
         connect.textContent = 'Refresh source status';
-        remember();
+        remember(true);
         describeSource(status);
         notice.textContent = `Connected read-only. ${status.count} entries in the authorized source.`;
       } else if (receipt.status === 'disconnected') {
@@ -161,9 +165,13 @@ export function bindSynapses({
       if (error instanceof HttpError && error.status === 401) {
         trusted = false;
         forget();
-        notice.textContent = 'Local session expired or revoked. Reopen Cortex through its launcher.';
+        notice.textContent = 'Connection expired or revoked. Click Connect to Brain to reconnect.';
       } else {
-        const message = error instanceof HttpError ? ({
+        const message = error instanceof HttpError && operation === 'launch' ?
+          (error.status === 429 ?
+            'An approval page is already waiting. Use that page, or retry Connect to Brain after one minute.' :
+            'Cortex could not open its approval page. The local server needs a configured Brain and an available desktop browser. Retry Connect to Brain after resolving that problem.') :
+          error instanceof HttpError ? ({
           403: 'Source access denied or reader not synchronized. No current results are shown.',
           429: 'Local connection busy. Retry when the current request finishes.',
           503: 'Local connection unavailable. Check its external profile and source authority.',
@@ -179,7 +187,8 @@ export function bindSynapses({
     }
   }
 
-  const onConnect = () => trusted ? run(paired ? 'status' : 'session', paired ? {} : {source: brain.value}) : undefined;
+  const onConnect = () => trusted ?
+    run(paired ? 'status' : 'session', paired ? {} : {source: brain.value}) : run('launch');
   const onDisconnect = () => {
     // Disconnect read access, not the fixed-lifetime trust established by native launch.
     generation += 1;
@@ -187,7 +196,7 @@ export function bindSynapses({
     paired = false;
     clear();
     query.value = '';
-    connect.textContent = 'Connect';
+    connect.textContent = 'Connect to Brain';
     return run('disconnect');
   };
   const onSubmit = event => {
@@ -202,9 +211,12 @@ export function bindSynapses({
   if (windowTarget?.opener) {
     client = createSynapsesClient({origin: getOrigin(), activity, fetchImpl});
     disposeLaunch = receiveLaunch({
-      windowTarget, client, onReady: trust,
+      windowTarget, client, onReady: receipt => {
+        trust(receipt);
+        return run('session', {source: brain.value});
+      },
       onError: () => {
-        notice.textContent = 'Trusted launch expired or failed. Reopen Cortex through its launcher. No access grant was changed.';
+        notice.textContent = 'Approval expired or failed. Click Connect to Brain to retry. No access grant was changed.';
         controls();
       }
     });

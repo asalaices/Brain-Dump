@@ -48,7 +48,7 @@ export function validateReceipt(value) {
         }
       }
     }
-  } else if (value.status !== 'disconnected') {
+  } else if (!['disconnected', 'launch_requested'].includes(value.status)) {
     throw new TypeError('Unexpected local API outcome.');
   }
   return value;
@@ -67,7 +67,7 @@ export function createSynapsesClient({origin, activity, fetchImpl}) {
   const browserKey = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
   return Object.freeze({
     request(operation, body = {}, signal) {
-      if (!['bootstrap', 'session', 'disconnect', 'status', 'synapse'].includes(operation)) {
+      if (!['launch', 'bootstrap', 'session', 'disconnect', 'status', 'synapse'].includes(operation)) {
         throw new TypeError('Unsupported local read operation.');
       }
       return client.requestJson(operation, {

@@ -102,8 +102,9 @@ Only `web/` is served; hidden paths, traversal, symlinks and directory listings
 are rejected. An authenticated loopback `/_cortex/lifecycle` control is internal
 process ownership/shutdown plumbing, not a browser data API or API-badge
 activity source. Opening a plain URL or API details makes no backend requests.
-A trusted launch exchanges its short-lived bootstrap but does not read a source
-until Connect. Theme/source preferences use only `cortex.theme` and
+A trusted launch exchanges its short-lived bootstrap and automatically checks
+the configured source status; private context is requested only by Recall.
+Theme/source preferences use only `cortex.theme` and
 `cortex.source` in browser local storage; denied storage is visibly reported.
 Credentials, queries and results are never placed there or in session storage.
 
@@ -180,7 +181,6 @@ profile's `cli` string. Select an existing consultation profile explicitly:
 # Stop only an owned preview when applying new server code or configuration.
 ./cortex_server --stop
 ./cortex_server --start --synapses-profile /absolute/private/consult.json
-./cortex_server --open
 ```
 
 The existing profile supplies `identity_repo`, `source_repo`, `source` (registered
@@ -197,14 +197,22 @@ explicit profile rejects that case. Stop/start the owned instance deliberately.
 Starting without a profile still serves the foundation, but local reads return
 `not_configured`; no ambient source is inferred.
 
-1. Run `./cortex_server --open` using the same `--runtime-dir`, if overridden.
-   The native browser opens an owner-private launch document.
-2. Click **Open Cortex** on that document. It opens the clean
-   `http://127.0.0.1:PORT/` tab and automatically establishes local browser trust.
-3. Select **Configured Brain**, then **Connect**. Cortex checks existing upstream
-   authority and source status before enabling bounded **Recall**.
-   **Disconnect** immediately disables reads and clears displayed data; reconnect
-   is available in the same trusted tab until its fixed session expiry.
+1. Open the ordinary Cortex URL, `http://127.0.0.1:PORT/`, and click
+   **Connect to Brain**. No terminal command or launcher discovery is required.
+2. The existing native browser opens an owner-private approval page naming the
+   configured Brain and exact Cortex origin. Click **Approve connection** there.
+   The independent private page protects the connection from a browser caller
+   authorizing itself; the first Cortex click only requests this approval.
+3. A clean, trusted Cortex tab opens and automatically checks existing upstream
+   authority/source status before enabling bounded **Recall**. No redundant
+   Connect click is required. The original requesting tab remains disconnected;
+   the approval page and original tab may be closed.
+
+**Disconnect** immediately disables reads and clears displayed data.
+**Connect to Brain** reconnects the same trusted tab until fixed session expiry
+without another approval page. After expiry or in a fresh tab, the same button
+starts approval again. `./cortex_server --open` remains an optional operator
+shortcut to the same approval, not the normal user's entry point.
 
 The current external profile selects **one** registered named source. Only that
 alias appears in the selector; this does not add multiple-profile discovery.
@@ -215,8 +223,18 @@ local launch only protects the backend from unrelated browser callers.
 
 ### Credential-free URL launch
 
-The internal authenticated `/_cortex/open` control creates an unpredictable,
-owner-private HTML file inside the existing private runtime directory. A random
+The browser's same-origin `launch` request asks the existing native browser to
+open an unpredictable owner-private HTML approval file inside the existing
+private runtime directory. It returns no credential, file path, cookie or
+authority to the initiating page. Its arbitrary tab ID/key is not approval.
+Only one unexpired approval may be pending; repeated requests return429 without
+replacing it or opening more windows. Failed native launch returns503 and
+cleans only its own pending file, preserving any newer owner-issued launch.
+Missing native-browser/runtime capability is an explicit error, never a false
+connected state. No protocol handler, installation or new OS grant is added.
+The authenticated `/_cortex/open` control supports the optional operator shortcut.
+
+A random
 single-use credential expires in 60 seconds and is never printed or placed in a
 URL, fragment, referrer, form submission, browser storage or persisted history
 URL. The file is deleted on exchange, expiry, replacement, launch failure or
@@ -242,8 +260,9 @@ expiry revoke browser trust; disconnect revokes read access while retaining
 that fixed-lifetime trust for reconnect. The server rechecks the connected
 session after each managed read before disclosure. The browser clears results
 on errors, disconnect and local expiry, and ignores late replies after
-cancellation. Reload/different-tab requires `--open` again; a plain URL or UI
-Connect alone is not proof of local browser identity. Concurrent-tab/shared
+cancellation. Reload/different-tab starts approval with **Connect to Brain**
+again; a plain URL or UI Connect alone is not proof of local browser identity.
+Concurrent-tab/shared
 session behavior is not claimed. The old manual pairing control remains
 available for diagnostics (five-minute pending IDs, at most eight), not the
 normal connection experience.
@@ -262,6 +281,7 @@ Version-1 HTTP contract (all routes are POST, JSON, under `/api/local/`):
 
 | Route | Request | Result |
 | --- | --- | --- |
+| `launch` | `{}` | HTTP202 `launch_requested`; native private approval requested, no session/read authority or credential returned. One pending approval, otherwise429. |
 | `bootstrap` | Private single-use credential | `trusted`, configured alias list and remaining lifetime; tab-bound HttpOnly cookie. No source read or grant. |
 | `session` | `{"source":"example"}` | `paired` local read session only for the existing configured alias. No filesystem paths or alternate grants. |
 | `disconnect` | `{}` | `disconnected`; reads disabled, fixed-lifetime tab trust retained for Connect. No source mutation. |
@@ -277,7 +297,7 @@ claim to cancel an already executing server-side read; a subsequent read may
 remain busy until it finishes. There is no automatic retry or polling.
 
 HTTP 401 means local launch/session expired or missing, 403 denies a caller or source,
-503 means not configured/upstream authority unavailable, and 502 means a failed
+503 means native launch/configuration/upstream authority unavailable, and 502 means a failed
 managed read. Unexpected fields or malformed bodies return 400. Raw private
 diagnostic messages, paths, credentials, query strings and excerpts are omitted
 from logs/error responses; failures never return cached authorized results.
@@ -294,7 +314,8 @@ of this public source tree. Offline tests mock only the managed source boundary,
 exercise real local HTTP, bootstrap replay/expiry/concurrency, native-launch
 failure cleanup, tab/origin isolation and configured-source decisions, and
 require no private grant or data. Browser tests also cover one-use opener
-handoff, credential-free readiness messages, source preferences and reconnect.
+handoff, actionable fresh-URL launch intent, automatic connection only after
+approval, credential-free readiness messages, source preferences and reconnect.
 
 ## Reference implementation and adaptation
 
