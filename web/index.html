@@ -10,6 +10,33 @@
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
+  <aside id="api-drawer" class="api-drawer" aria-label="API activity control" data-collapsed="false">
+    <div id="api-drawer-content">
+      <span class="api-drawer-label" aria-hidden="true">API</span>
+      <button id="api-status" type="button" aria-label="Show API activity details" aria-controls="api-details" aria-expanded="false" aria-describedby="api-label">
+        <span class="activity-dot" aria-hidden="true"></span>
+      </button>
+      <span id="api-label" class="api-tooltip" role="tooltip">API not configured</span>
+    </div>
+    <button id="api-drawer-toggle" type="button" aria-controls="api-drawer-content" aria-expanded="true" aria-label="Hide API activity control" title="Hide API activity control">
+      <svg width="12" height="16" viewBox="0 0 12 16" aria-hidden="true" focusable="false">
+        <path d="m8 3-5 5 5 5" fill="none" stroke="currentColor" stroke-width="2"/>
+      </svg>
+    </button>
+  </aside>
+  <section id="api-details" aria-labelledby="api-heading" tabindex="-1" hidden>
+    <div class="api-drawer-heading">
+      <h2 id="api-heading">API activity</h2>
+      <button id="api-close" type="button" aria-label="Close API activity">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="m3 3 10 10M13 3 3 13" fill="none" stroke="currentColor" stroke-width="2"/>
+        </svg>
+      </button>
+    </div>
+    <p id="api-counts"></p>
+    <p>The indicator follows actual requests from this page, including response parsing.
+      Backend readiness and source authorization are reported separately below.</p>
+  </section>
   <header>
     <div><p class="eyebrow">Brain-Dump</p><h1>Cortex</h1></div>
     <div class="controls">
@@ -20,20 +47,11 @@
           <option value="plum">Plum</option><option value="sand">Sand</option>
         </select>
       </label>
-      <button id="api-status" type="button" aria-controls="api-details" aria-expanded="false">
-        <span class="activity-dot" aria-hidden="true"></span>
-        <span id="api-label">API not configured</span>
-      </button>
     </div>
   </header>
   <main id="main">
     <p id="theme-notice" role="status" hidden></p>
-    <section id="api-details" aria-labelledby="api-heading" hidden>
-      <h2 id="api-heading">API activity</h2>
-      <p id="api-counts"></p>
-      <p>The indicator follows actual requests from this page, including response parsing.
-        Backend readiness and source authorization are reported separately below.</p>
-    </section>
+    <p id="api-drawer-notice" class="notice" role="status" hidden></p>
     <section>
       <p class="eyebrow">Owner-only local pilot</p>
       <h2>Connect to Synapses</h2>

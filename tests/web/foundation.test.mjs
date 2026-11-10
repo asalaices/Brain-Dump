@@ -24,13 +24,17 @@ class Element extends EventTarget {
   focused = false;
   setAttribute(name, value) { this.attributes[name] = value; }
   focus() { this.focused = true; }
+  contains(target) { return target === this; }
 }
 
-function statusFixture(activity) {
+function statusFixture(activity, getStorage = () => ({getItem: () => null, setItem() {}})) {
   const parts = {
-    activity, button: new Element(), panel: new Element(), status: new Element(),
-    details: new Element(), documentTarget: new EventTarget()
+    activity, button: new Element(), panel: new Element(), closeButton: new Element(), status: new Element(),
+    details: new Element(), documentTarget: new EventTarget(), drawer: new Element(), contents: new Element(),
+    hideButton: new Element(), notice: new Element(), getStorage
   };
+  parts.notice.hidden = true;
+  parts.drawer.contains = target => [parts.drawer, parts.contents, parts.button, parts.hideButton].includes(target);
   return {...parts, dispose: bindApiStatus(parts)};
 }
 
@@ -209,12 +213,22 @@ test('details toggle without network activity; Escape closes and restores focus'
   const parts = statusFixture(activity);
   parts.button.dispatchEvent(new Event('click'));
   assert.equal(parts.panel.hidden, false);
+  assert.equal(parts.closeButton.focused, true);
   assert.equal(parts.button.attributes['aria-expanded'], 'true');
   const escape = new Event('keydown');
   Object.defineProperty(escape, 'key', {value: 'Escape'});
   parts.documentTarget.dispatchEvent(escape);
   assert.equal(parts.panel.hidden, true);
   assert.equal(parts.button.focused, true);
+  assert.equal(parts.button.dataset.tooltipDismissed, 'true');
+  parts.button.dispatchEvent(new Event('pointerenter'));
+  assert.equal(parts.button.dataset.tooltipDismissed, 'false');
+  parts.button.dispatchEvent(new Event('click'));
+  parts.closeButton.dispatchEvent(new Event('click'));
+  assert.equal(parts.panel.hidden, true);
+  parts.button.dispatchEvent(new Event('click'));
+  parts.documentTarget.dispatchEvent(new Event('pointerdown'));
+  assert.equal(parts.panel.hidden, true);
   assert.equal(activity.snapshot().started, 0);
   parts.dispose();
   parts.button.dispatchEvent(new Event('click'));
@@ -241,6 +255,77 @@ test('all six inherited palettes can be selected and persisted independently', (
   fixture.select.value = 'light';
   fixture.select.dispatchEvent(new Event('change'));
   assert.equal(fixture.root.dataset.theme, 'sand');
+});
+
+test('the hide surface persists collapse, closes details and retains an accessible restore handle', () => {
+  const saved = new Map();
+  const getStorage = () => ({getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value)});
+  const activity = createApiActivity();
+  const parts = statusFixture(activity, getStorage);
+  assert.equal(parts.drawer.dataset.collapsed, 'false');
+  parts.button.dispatchEvent(new Event('click'));
+  parts.hideButton.dispatchEvent(new Event('click'));
+  assert.equal(parts.panel.hidden, true);
+  assert.equal(parts.drawer.dataset.collapsed, 'true');
+  assert.equal(parts.contents.inert, true);
+  assert.equal(parts.contents.attributes['aria-hidden'], 'true');
+  assert.equal(parts.hideButton.attributes['aria-expanded'], 'false');
+  assert.equal(parts.hideButton.attributes['aria-label'], 'Show API activity control');
+  assert.equal(parts.hideButton.focused, true);
+  assert.equal(saved.get('cortex.api-drawer.collapsed'), 'true');
+  activity.configure();
+  activity.begin()('completed');
+  assert.equal(parts.button.dataset.state, 'idle');
+  const restored = statusFixture(activity, getStorage);
+  assert.equal(restored.drawer.dataset.collapsed, 'true');
+  restored.hideButton.dispatchEvent(new Event('click'));
+  assert.equal(restored.drawer.dataset.collapsed, 'false');
+  assert.equal(restored.contents.inert, false);
+  assert.equal(restored.contents.attributes['aria-hidden'], 'false');
+  assert.equal(restored.hideButton.attributes['aria-label'], 'Hide API activity control');
+  assert.equal(saved.get('cortex.api-drawer.collapsed'), 'false');
+  parts.dispose();
+  restored.dispose();
+  restored.hideButton.dispatchEvent(new Event('click'));
+  assert.equal(restored.drawer.dataset.collapsed, 'false');
+});
+
+test('drawer background and Escape hide controls without swallowing the API button action', () => {
+  const parts = statusFixture(createApiActivity());
+  parts.button.dispatchEvent(new Event('click'));
+  assert.equal(parts.drawer.dataset.collapsed, 'false');
+  assert.equal(parts.panel.hidden, false);
+  const escape = new Event('keydown', {cancelable: true});
+  Object.defineProperties(escape, {key: {value: 'Escape'}, target: {value: parts.button}});
+  parts.documentTarget.dispatchEvent(escape);
+  assert.equal(parts.panel.hidden, true);
+  assert.equal(parts.drawer.dataset.collapsed, 'false');
+  parts.documentTarget.dispatchEvent(escape);
+  assert.equal(parts.drawer.dataset.collapsed, 'true');
+  assert.equal(escape.defaultPrevented, true);
+  parts.hideButton.dispatchEvent(new Event('click'));
+  parts.drawer.dispatchEvent(new Event('click'));
+  assert.equal(parts.drawer.dataset.collapsed, 'true');
+  assert.equal(parts.hideButton.focused, true);
+  parts.dispose();
+});
+
+test('unavailable or invalid drawer storage is explicit and never disables restoring controls', () => {
+  for (const getStorage of [
+    () => { throw new Error('denied'); },
+    () => ({getItem: () => 'unsupported', setItem() { throw new Error('denied'); }})
+  ]) {
+    const parts = statusFixture(createApiActivity(), getStorage);
+    assert.equal(parts.drawer.dataset.collapsed, 'false');
+    assert.equal(parts.notice.hidden, false);
+    assert.match(parts.notice.textContent, /unavailable|not supported/);
+    parts.hideButton.dispatchEvent(new Event('click'));
+    assert.equal(parts.drawer.dataset.collapsed, 'true');
+    assert.match(parts.notice.textContent, /storage is unavailable/);
+    parts.hideButton.dispatchEvent(new Event('click'));
+    assert.equal(parts.drawer.dataset.collapsed, 'false');
+    parts.dispose();
+  }
 });
 
 test('unavailable storage and invalid saved themes are explicitly reported', () => {
@@ -340,4 +425,27 @@ test('styles define all palette tokens, bounded activity motion, and reduced-mot
   assert.match(css, /:focus-visible/);
   assert.match(css, /min-height: 2\.75rem/);
   assert.match(css, /\[hidden\] \{ display: none !important;/);
+});
+
+test('API trigger has only its icon and a separate hover/focus tooltip in a top-left drawer', async () => {
+  const html = await readFile(new URL('../../web/index.html', import.meta.url), 'utf8');
+  const button = html.match(/<button id="api-status"[^>]*>([\s\S]*?)<\/button>/)[1];
+  assert.equal(button.replace(/<[^>]*>/g, '').trim(), '');
+  assert.match(button, /activity-dot[^>]*aria-hidden="true"/);
+  assert.match(html, /id="api-status"[^>]*aria-describedby="api-label"/);
+  assert.match(html, /id="api-label"[^>]*role="tooltip"/);
+  assert.match(html, /class="api-drawer-label"[^>]*>API<\/span>\s*<button id="api-status"/);
+  assert.ok(html.indexOf('class="api-drawer"') < html.indexOf('<header>'));
+  assert.match(html, /id="api-details"[^>]*tabindex="-1" hidden/);
+  const css = await readFile(new URL('../../web/styles/base.css', import.meta.url), 'utf8');
+  assert.match(css, /\.api-drawer \{[^}]*position: fixed;[^}]*top: calc\(4px[^}]*left: calc\(4px/);
+  assert.match(css, /#api-details \{[^}]*position: fixed;[^}]*left: calc\(92px[^}]*width: min\(360px/);
+  assert.match(html, /id="api-drawer-toggle"[^>]*aria-controls="api-drawer-content"/);
+  assert.match(css, /\[data-collapsed="true"\] \{[^}]*transform: translateX\(-100%\)/);
+  assert.match(css, /\[data-collapsed="true"\] #api-drawer-content \{ visibility: hidden; pointer-events: none;/);
+  assert.match(css, /\.api-drawer \{ transition: none;/);
+  assert.match(css, /#api-status \{[^}]*width: 44px; height: 44px/);
+  assert.match(css, /\.api-tooltip \{[^}]*visibility: hidden/);
+  assert.match(css, /:hover #api-status/);
+  assert.match(css, /:focus-visible:not\(\[data-tooltip-dismissed="true"\]\)/);
 });

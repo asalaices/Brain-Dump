@@ -314,8 +314,38 @@ Reference source paths below are repository-relative to their named owner:
 These are historical source references, not runtime dependencies or evidence
 that either app is currently deployed. The API control uses a native button,
 `aria-expanded`/`aria-controls`, `aria-busy`, descriptive text, keyboard activation
-and Escape-to-close with focus return. It is an inline, non-modal disclosure;
+and Escape-to-close with focus return. It is an adjacent, non-modal disclosure;
 there is no hover timer or focus trap.
+
+The icon-only top-left API control and adjacent activity drawer also adapt the
+actual Execution Desk VPN monitor software at master-01 revision
+`1a9d13799e5c77919f08ed398c94bb19d6f45b22`:
+`local_scripts/execution_gateway/index.html:16,33,136-139` (empty native monitor
+button, tooltip/name, non-modal details and focus return), and
+`bootstrap/config/execution-interface.css:6-9,14-15,84` (fixed corner container,
+13px glowing indicator, 8px rounded frame, shadow, adjacent 360px bounded popup
+at left64px/top4px and reduced-motion rules). Cortex maps neutral colors to its
+theme tokens, honors safe-area insets, retains a 44px keyboard/touch target
+around the 13px icon, and reserves header clearance. The separate visible API
+caption sits above the icon, matching the reference's monitor label. Dynamic
+status text appears only in a hover/focus tooltip and accessible name; the
+button itself remains icon-only.
+Escape dismisses the tooltip or drawer; the close button returns focus, and
+outside clicks close without stealing focus. The drawer remains non-modal.
+The attached chevron hide/restore surface follows
+`payload_files/dashboard/usr/share/nginx/html/media-host-status/prompt-activity.js:10-27`
+at the same reference revision: it slides the frame offscreen, leaves the handle
+visible, removes hidden controls from keyboard/accessibility navigation, and
+remembers the non-sensitive collapsed preference in
+`localStorage["cortex.api-drawer.collapsed"]`. Refresh preserves that preference.
+The drawer background or Escape within the closed-details control also hides
+it; the API button itself still opens details rather than accidentally hiding
+them through event bubbling. The handle is 24px wide instead of the reference's
+16px, and details start at 92px rather than 64px to clear the larger hit targets.
+Storage failures are visible and hiding/restoring still works for the page.
+Reduced motion disables both request animation and drawer sliding.
+No VPN labels, infrastructure settings, reachability checks, polling or idle
+breathing are copied: only real Cortex requests animate the indicator.
 
 The lifecycle interface follows separately reviewed Simple-Todos conventions
 at `4fec68ce252c711d99d6a0421c4c4fc337e86b95`:
