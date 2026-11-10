@@ -293,6 +293,9 @@ def operate(action, runtime, port):
                             pass
                     except ConnectionRefusedError:
                         break
+                    except ConnectionResetError:
+                        # A closing listener can reset a probe; still require refusal.
+                        pass
                     if time.monotonic() >= deadline:
                         raise ValueError('Cortex did not stop; state retained. No PID was signalled.')
                     time.sleep(.05)

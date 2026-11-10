@@ -235,14 +235,20 @@ class CortexServerTests(unittest.TestCase):
             opener.return_value.open.side_effect = refused
             self.assertFalse(server.control(state))
 
-        def closed(_address, *, timeout):
+        attempts = []
+
+        def closed(address, *, timeout):
             self.assertGreaterEqual(timeout, 3)
+            attempts.append(address)
+            if len(attempts) == 1:
+                raise ConnectionResetError('fixture listener closing')
             raise ConnectionRefusedError('fixture listener closed')
 
         with patch.object(server, 'control', return_value=True), patch.object(server.socket, 'create_connection', side_effect=closed), patch.object(server.os, 'kill', side_effect=AssertionError('No PID signals')):
             result, code = server.operate('stop', self.runtime, 0)
         self.assertEqual(code, 0)
         self.assertEqual(result['status'], 'stopped')
+        self.assertEqual(len(attempts), 2)
         self.assertFalse(path.exists())
 
     def test_worker_self_exits_when_binding_cannot_finish_before_registration(self):
