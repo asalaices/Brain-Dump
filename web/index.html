@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cortex - web foundation</title>
+  <title>Cortex - local Synapses pilot</title>
   <link rel="stylesheet" href="./styles/themes.css">
   <link rel="stylesheet" href="./styles/base.css">
   <script type="module" src="./app.mjs"></script>
@@ -32,16 +32,27 @@
       <h2 id="api-heading">API activity</h2>
       <p id="api-counts"></p>
       <p>The indicator follows actual requests from this page, including response parsing.
-        No backend is configured in this foundation.</p>
+        Backend readiness and source authorization are reported separately below.</p>
     </section>
     <section>
-      <p class="eyebrow">Web foundation</p>
-      <h2>A shared starting point for Cortex</h2>
-      <p>Themes, an accessible API activity control and a request adapter boundary
-        are available. Memory, Recall and other product workflows are not connected.</p>
-      <p class="notice"><strong>Backend not configured.</strong> No API availability
-        check has run. This page does not load private sources, install grants
-        or connect to infrastructure services.</p>
+      <p class="eyebrow">Owner-only local pilot</p>
+      <h2>Connect to Synapses</h2>
+      <p>Read source status and request cited context through the existing Brain Bridge
+        authority. This is not a shared service, source grant or complete Cortex application.</p>
+      <div class="controls">
+        <button id="synapses-connect" type="button">Connect to Synapses</button>
+        <button id="synapses-disconnect" type="button" hidden>Disconnect</button>
+      </div>
+      <p id="synapses-notice" class="notice" role="status">Not connected. Owner pairing is required before any private source read.</p>
+      <p id="synapses-pairing"></p>
+      <p id="synapses-source"></p>
+      <form id="synapses-form" hidden>
+        <label for="synapses-query">Recall from the authorized source
+          <input id="synapses-query" type="search" maxlength="512" required autocomplete="off">
+        </label>
+        <button id="synapses-search" type="submit" disabled>Recall</button>
+      </form>
+      <ol id="synapses-results" aria-label="Cited Synapses matches"></ol>
     </section>
     <noscript><p class="notice">JavaScript is required for theme selection and API activity details.</p></noscript>
   </main>

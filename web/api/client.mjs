@@ -7,13 +7,20 @@ export class HttpError extends Error {
   }
 }
 
-export function createApiClient({baseUrl, activity, fetchImpl = globalThis.fetch}) {
+export function createApiClient({
+  baseUrl, activity, fetchImpl = globalThis.fetch, credentials = 'omit',
+  pageOrigin = globalThis.location?.origin, validateJson = value => value
+}) {
   const base = new URL(baseUrl);
   if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password ||
       base.search || base.hash || !base.pathname.endsWith('/')) {
     throw new TypeError('API base URL must be an HTTP(S) directory URL without credentials, query or fragment.');
   }
   if (typeof fetchImpl !== 'function') throw new TypeError('A fetch implementation is required.');
+  if (credentials !== 'omit' && (credentials !== 'same-origin' || base.origin !== pageOrigin)) {
+    throw new TypeError('Cookie transport requires an explicitly same-origin API.');
+  }
+  if (typeof validateJson !== 'function') throw new TypeError('A JSON response validator is required.');
   activity.configure();
 
   return Object.freeze({
@@ -30,9 +37,9 @@ export function createApiClient({baseUrl, activity, fetchImpl = globalThis.fetch
       }
       const finish = activity.begin();
       try {
-        const response = await fetchImpl(target.href, {...options, credentials: 'omit', redirect: 'error'});
+        const response = await fetchImpl(target.href, {...options, credentials, redirect: 'error'});
         if (!response.ok) throw new HttpError(response.status);
-        const result = response.status === 204 ? null : await response.json();
+        const result = response.status === 204 ? null : validateJson(await response.json());
         finish('completed');
         return result;
       } catch (error) {

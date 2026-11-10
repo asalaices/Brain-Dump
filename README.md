@@ -35,14 +35,16 @@ PR-only; no private master-01 checkout is required for the packaged operator.
 
 An initial [Cortex web foundation](docs/CORTEX-WEB.md) provides a common `web/`
 structure, six shared themes and reusable request-driven API activity components.
-It is a static, unconnected foundation: no product API, private source access or
-complete Cortex application is claimed.
+An optional owner-paired local pilot connects source status and bounded cited
+Recall to the existing authorized Brain Bridge functions. It is not a shared
+service, new source grant or complete Cortex application.
 
 From a source checkout, `./cortex_server --start`, `--status` and `--stop`
 manage a loopback-only static preview with verified ownership and readiness.
 Python 3.11+ is required; Windows uses `python cortex_server`.
 See [Cortex setup and lifecycle](docs/CORTEX-WEB.md#run-and-test) for configuration
-and limits. This does not install a service or provide a product API.
+and limits, including explicit external-profile selection and browser pairing.
+This does not install a service or complete the planned product API.
 
 The full enterprise roadmap remains the target; this is a development foundation.
 [Managed source documentation](docs/MANAGED-SOURCES.md) describes the implemented

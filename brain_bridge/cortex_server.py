@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 Creative Software Development
-"""Loopback-only source-checkout static server with authenticated self-shutdown."""
+"""Loopback source preview with owned lifecycle and an optional read-only Synapses pilot."""
 import argparse
 import errno
 import hashlib
@@ -28,12 +28,14 @@ from . import __version__
 from .connectors import NoRedirect
 from .installation.discovery import safe
 from .reconciliation import _lock as runtime_lock, _save as save_state
+from .cortex_synapses import LocalSynapses, PREFIX, handle as handle_synapses, load_profile
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / 'web'
 TIMEOUT = 5
 LOG = logging.getLogger('cortex_server')
 CONTROL = '/_cortex/lifecycle'
+PAIR_CONTROL = '/_cortex/pair'
 
 
 def private_file(path, limit=65536):
@@ -71,10 +73,11 @@ def read_state(runtime):
         raise ValueError('Invalid Cortex runtime JSON; retained for inspection.') from error
 
 
-def control(state, stop=False):
+def control(state, stop=False, pair=None):
     request = Request(
-        f"http://127.0.0.1:{state['port']}{CONTROL}",
-        data=b'' if stop else None, method='POST' if stop else 'GET',
+        f"http://127.0.0.1:{state['port']}{PAIR_CONTROL if pair else CONTROL}",
+        data=json.dumps({'pair': pair}).encode() if pair else b'' if stop else None,
+        method='POST' if stop or pair else 'GET',
         headers={'X-Cortex-Control': state['token']}
     )
     try:
@@ -90,11 +93,19 @@ def control(state, stop=False):
     except URLError as error:
         if isinstance(error, HTTPError):
             error.close()
+            if pair:
+                raise ValueError(f'Browser pairing failed (HTTP {error.code}); verify the pending ID and server version. State retained.') from error
         if isinstance(error.reason, ConnectionRefusedError) or getattr(error.reason, 'errno', None) == errno.ECONNREFUSED:
+            if pair:
+                raise ValueError('Cortex stopped before browser approval; no pairing was confirmed.') from error
             return False
         raise ValueError('Cortex ownership could not be verified; runtime state retained.') from error
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError('Cortex ownership could not be verified; runtime state retained.') from error
+    if pair:
+        if identity != {'schema_version': 1, 'status': 'paired', 'expires_in_seconds': 1800}:
+            raise ValueError('Invalid Cortex browser pairing response.')
+        return identity
     expected = {key: state[key] for key in ('pid', 'instance', 'root')}
     if identity != expected:
         raise ValueError('Cortex ownership mismatch; refusing lifecycle operation.')
@@ -141,9 +152,35 @@ class StaticHandler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
 
     def do_POST(self):
-        if self.path != CONTROL:
+        if self.path.startswith(PREFIX):
+            handle_synapses(self)
+        elif self.path not in (CONTROL, PAIR_CONTROL):
             self.send_error(404)
         elif self.authorized():
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 <= length <= 256 or self.headers.get('Transfer-Encoding') is not None:
+                    raise ValueError('Invalid control payload.')
+                if self.path == PAIR_CONTROL:
+                    if not length:
+                        raise ValueError('Pairing requires a pending browser ID.')
+                    self.connection.settimeout(TIMEOUT)
+                    payload = json.loads(self.rfile.read(length))
+                    if not isinstance(payload, dict) or set(payload) != {'pair'} or not isinstance(payload['pair'], str):
+                        raise ValueError('Invalid pairing request.')
+                    result = self.server.synapses.pair(payload['pair'])
+                    body = json.dumps(result).encode()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if length:
+                    raise ValueError('Shutdown does not accept a payload.')
+            except (ValueError, OSError):
+                self.send_error(400)
+                return
             self.send_response(204)
             self.send_header('Content-Length', '0')
             self.end_headers()
@@ -176,7 +213,7 @@ class CortexHTTPServer(ThreadingHTTPServer):
 def worker():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s cortex_server %(levelname)s %(message)s')
     config = json.loads(sys.stdin.readline(8193))
-    if set(config) != {'instance', 'token', 'port'} or type(config['port']) is not int or not 0 <= config['port'] <= 65535:
+    if set(config) not in ({'instance', 'token', 'port'}, {'instance', 'token', 'port', 'profile'}) or type(config['port']) is not int or not 0 <= config['port'] <= 65535:
         raise ValueError('Invalid Cortex startup configuration.')
     if not (WEB / 'index.html').is_file():
         raise ValueError('Cortex web assets are unavailable in this source checkout.')
@@ -196,6 +233,7 @@ def worker():
             'port': server.server_port, 'root': str(ROOT)
         })
         server.identity = identity
+        server.synapses = LocalSynapses(load_profile(config['profile'], ROOT) if config.get('profile') else None)
         thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .05}, daemon=True)
         thread.start()
         try:
@@ -212,7 +250,7 @@ def worker():
     return 0
 
 
-def start(runtime, port):
+def start(runtime, port, profile=None):
     token = secrets.token_hex(32)
     instance = secrets.token_hex(16)
     output = runtime / 'server.log'
@@ -230,7 +268,10 @@ def start(runtime, port):
     state = None
     acknowledged = False
     try:
-        process.stdin.write((json.dumps({'instance': instance, 'token': token, 'port': port}) + '\n').encode())
+        config = {'instance': instance, 'token': token, 'port': port}
+        if profile is not None:
+            config['profile'] = str(profile)
+        process.stdin.write((json.dumps(config) + '\n').encode())
         process.stdin.flush()
         try:
             line = replies.get(timeout=TIMEOUT)
@@ -266,12 +307,14 @@ def start(runtime, port):
                     (runtime / 'state.json').unlink()
 
 
-def operate(action, runtime, port):
+def operate(action, runtime, port, profile=None, pair=None):
     runtime = Path(os.path.abspath(runtime))
     safe(runtime)
     if runtime.is_relative_to(ROOT):
         raise ValueError('Cortex runtime state must be outside the source checkout.')
     if not runtime.exists():
+        if action == 'pair':
+            raise ValueError('Start Cortex with an external Synapses profile before pairing.')
         if action != 'start':
             return {'status': 'stopped'}, 1 if action == 'status' else 0
         runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -283,6 +326,10 @@ def operate(action, runtime, port):
         running = state is not None and control(state)
         if action == 'status':
             return public_state(state) if running else {'status': 'stale' if state else 'stopped'}, 0 if running else 1
+        if action == 'pair':
+            if not running:
+                raise ValueError('Cortex is not running; no browser was paired.')
+            return control(state, pair=pair), 0
         if action == 'stop':
             if running:
                 control(state, stop=True)
@@ -302,10 +349,12 @@ def operate(action, runtime, port):
             if state:
                 (runtime / 'state.json').unlink()
             return {'status': 'stopped', 'stale_state_removed': state is not None and not running}, 0
+        if running and profile is not None:
+            raise ValueError('Cortex is already running; stop/start to apply a Synapses profile.')
         if not running:
             if state:
                 (runtime / 'state.json').unlink()
-            state = start(runtime, port)
+            state = start(runtime, port, profile) if profile is not None else start(runtime, port)
         return {**public_state(state), 'log': str(runtime / 'server.log')}, 0
 
 
@@ -321,6 +370,8 @@ def main(argv=None):
     actions = parser.add_mutually_exclusive_group(required=True)
     for action in ('start', 'stop', 'status'):
         actions.add_argument('--' + action, action='store_true')
+    actions.add_argument('--pair', metavar='BROWSER_ID', help='Approve the pending browser ID displayed by this page; no credentials printed.')
+    parser.add_argument('--synapses-profile', type=Path, help='External consultation routing profile; --start only.')
     parser.add_argument('--version', action='version', version='cortex_server ' + __version__)
     parser.add_argument('--port', type=int, default=os.environ.get('CORTEX_PORT', '8080'))
     default_runtime = Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state')) / 'brain-dump' / ('cortex-' + hashlib.sha256(str(ROOT).encode()).hexdigest()[:12])
@@ -328,6 +379,10 @@ def main(argv=None):
     parser.add_argument('--json', action='store_true', help='Emit JSON (the default).')
     parser.add_argument('--pretty', action='store_true', help='Indent the same JSON document.')
     args = parser.parse_args(arguments)
+    if args.synapses_profile is not None and not args.start:
+        parser.error('--synapses-profile is supported only with --start.')
+    if args.pair is not None and not re.fullmatch('[a-f0-9]{32}', args.pair):
+        parser.error('--pair requires the pending browser ID displayed by Cortex.')
     if not 0 <= args.port <= 65535:
         parser.error('Port must be 0..65535; 0 selects an available ephemeral port.')
     host = os.environ.get('CORTEX_HOST', '127.0.0.1')
@@ -335,8 +390,10 @@ def main(argv=None):
         parser.error('Cortex serves only loopback (127.0.0.1 or localhost).')
     from .__main__ import runtime_info
     try:
-        action = next(name for name in ('start', 'stop', 'status') if getattr(args, name))
-        result, code = operate(action, args.runtime_dir, args.port)
+        action = 'pair' if args.pair else next(name for name in ('start', 'stop', 'status') if getattr(args, name))
+        if args.synapses_profile is not None:
+            load_profile(args.synapses_profile, ROOT)
+        result, code = operate(action, args.runtime_dir, args.port, args.synapses_profile, args.pair)
     except (OSError, ValueError, RuntimeError) as error:
         result, code = {'status': 'error', 'error': str(error)}, 1
     result['info'] = {**runtime_info(), 'script': 'cortex_server'}

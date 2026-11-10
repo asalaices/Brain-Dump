@@ -2,6 +2,7 @@
 import {createApiActivity} from './api/activity.mjs';
 import {bindApiStatus} from './components/api-status.mjs';
 import {bindTheme} from './theme.mjs';
+import {bindSynapses} from './components/synapses.mjs';
 
 bindTheme({
   root: document.documentElement,
@@ -20,5 +21,4 @@ bindApiStatus({
   documentTarget: document
 });
 
-// Endpoint selection and authenticated product adapters belong to the API contract work.
-// No transport is created here, so opening the foundation makes no backend requests.
+bindSynapses({activity, documentTarget: document});
