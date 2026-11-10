@@ -231,7 +231,19 @@ def reply(handler, code, body, token=None, clear=False):
 
 
 def handle(handler):
-    """POST-only same-origin surface; no source paths, aliases or commands in input."""
+    """Bounded same-origin POSTs; configured source selection never grants access."""
+    try:
+        length = int(handler.headers.get('Content-Length', '-1'))
+        if not 2 <= length <= 4096:
+            raise ValueError('Invalid body length')
+        handler.connection.settimeout(3)
+        # Consume bounded input before rejecting; unread bytes can reset Windows TCP.
+        raw = handler.rfile.read(length)
+        if len(raw) != length:
+            raise ValueError('Incomplete body')
+    except (ValueError, OSError):
+        reply(handler, 400, {'status': 'invalid_request'})
+        return
     host = f'127.0.0.1:{handler.server.server_port}'
     browser_key = handler.headers.get('X-Cortex-Browser', '')
     if (handler.headers.get('Host') != host or handler.headers.get('Origin') != 'http://' + host
@@ -251,13 +263,6 @@ def handle(handler):
         reply(handler, 400, {'status': 'invalid_request'})
         return
     try:
-        length = int(handler.headers.get('Content-Length', '-1'))
-        if not 2 <= length <= 4096:
-            raise ValueError('Invalid body length')
-        handler.connection.settimeout(3)
-        raw = handler.rfile.read(length)
-        if len(raw) != length:
-            raise ValueError('Incomplete body')
         body = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant)
         shapes = {'bootstrap': {'credential'}, 'synapse': {'query'}}
         allowed = shapes.get(endpoint, set())

@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Creative Software Development
 """Synthetic local pairing/HTTP fixtures; never consult a live private source."""
 from http.client import HTTPConnection
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -11,8 +12,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from brain_bridge import cortex_server as server, cortex_synapses as local
 from brain_bridge.policy import AccessDenied, AuthorizationUnavailable
@@ -274,6 +276,35 @@ class LocalSynapsesTests(unittest.TestCase):
             self.assertEqual(json.loads(process.stdout)['status'], 'paired')
             self.assertNotIn(self.state['token'], process.stdout + process.stderr)
         self.assertEqual(self.post('status', cookie=cookie)[0], 200)
+
+    def test_rejection_consumes_only_bounded_body_before_reply_without_authorizing(self):
+        fields = {'Content-Length': '2', 'Content-Type': 'application/json',
+                  'Origin': f'http://127.0.0.1:{self.http.server_port}',
+                  'Host': f'127.0.0.1:{self.http.server_port}',
+                  'X-Cortex-Read-Only': '1', 'X-Cortex-Browser': '3' * 64}
+        for overrides, code in (
+            ({'Origin': 'http://example.invalid'}, 403), ({'Host': 'example.invalid'}, 403),
+            ({'X-Cortex-Read-Only': ''}, 403), ({'X-Cortex-Browser': ''}, 403),
+            ({'Content-Type': 'text/plain'}, 400), ({'Transfer-Encoding': 'chunked'}, 400)
+        ):
+            with self.subTest(headers=overrides):
+                handler = SimpleNamespace(headers=fields | overrides, server=self.http,
+                                          connection=Mock(), rfile=BytesIO(b'{}'),
+                                          path=local.PREFIX + 'status')
+                with patch.object(local, 'reply') as response:
+                    local.handle(handler)
+                self.assertEqual(handler.rfile.tell(), 2)
+                handler.connection.settimeout.assert_called_once_with(3)
+                response.assert_called_once_with(
+                    handler, code, {'status': 'denied' if code == 403 else 'invalid_request'})
+        handler.headers = fields | {'Content-Length': '4097'}
+        handler.rfile = BytesIO(b'x' * 4097)
+        with patch.object(local, 'reply') as response:
+            local.handle(handler)
+        self.assertEqual(handler.rfile.tell(), 0)
+        response.assert_called_once_with(handler, 400, {'status': 'invalid_request'})
+        self.status.assert_not_called()
+        self.synapse.assert_not_called()
 
     def test_origin_host_csrf_methods_and_control_reject_untrusted_callers(self):
         cookie = self.paired()
