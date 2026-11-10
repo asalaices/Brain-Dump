@@ -13,6 +13,7 @@ import queue
 import re
 import secrets
 import socket
+from socketserver import TCPServer
 import stat
 import subprocess
 import sys
@@ -164,6 +165,14 @@ class StaticHandler(SimpleHTTPRequestHandler):
         return None
 
 
+class CortexHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # A fixed loopback identity must not block startup on reverse DNS.
+        TCPServer.server_bind(self)
+        self.server_name = 'localhost'
+        self.server_port = self.server_address[1]
+
+
 def worker():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s cortex_server %(levelname)s %(message)s')
     config = json.loads(sys.stdin.readline(8193))
@@ -171,7 +180,15 @@ def worker():
         raise ValueError('Invalid Cortex startup configuration.')
     if not (WEB / 'index.html').is_file():
         raise ValueError('Cortex web assets are unavailable in this source checkout.')
-    with ThreadingHTTPServer(('127.0.0.1', config['port']), StaticHandler) as server:
+    registered = threading.Event()
+
+    def startup_deadline():
+        if not registered.wait(TIMEOUT * 2):
+            LOG.error('Unregistered worker exceeded its startup deadline; exiting.')
+            os._exit(1)
+
+    threading.Thread(target=startup_deadline, daemon=True).start()
+    with CortexHTTPServer(('127.0.0.1', config['port']), StaticHandler) as server:
         server.daemon_threads = True
         identity = validate_state({
             'schema_version': 1, 'pid': os.getpid(), 'instance': config['instance'],
@@ -185,6 +202,7 @@ def worker():
             print(json.dumps({key: identity[key] for key in ('pid', 'port', 'instance', 'root')}), flush=True)
             # EOF on controller failure prevents an unregistered background orphan.
             if sys.stdin.readline(16) == 'start\n':
+                registered.set()
                 LOG.info('Owned static server started pid=%s port=%s', identity['pid'], identity['port'])
                 thread.join()
         finally:

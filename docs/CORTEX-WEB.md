@@ -108,6 +108,9 @@ The full-suite runner explicitly imports checkout source; subsequent installed
 artifact checks remain separate. JavaScript/CSS MIME types are explicit rather
 than inherited from OS registry guesses, and connection-refusal checks allow
 Windows TCP retry timing without treating timeouts as a successful shutdown.
+Binding the loopback preview does not require reverse DNS. An unregistered
+worker also has a ten-second self-exit deadline, bounding startup cleanup even
+if a platform call cannot finish; successful registration cancels that deadline.
 Lifecycle fixtures cover real start/readiness/stop/restart, concurrency,
 idempotency, stale live PIDs, foreign listeners, redirects, invalid/oversized
 state or identity, busy ports, startup failure/timeout, private paths, static

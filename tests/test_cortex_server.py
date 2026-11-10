@@ -10,7 +10,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
@@ -167,7 +167,7 @@ class CortexServerTests(unittest.TestCase):
             def log_message(self, *_args):
                 pass
 
-        with ThreadingHTTPServer(('127.0.0.1', 0), Foreign) as foreign:
+        with server.CortexHTTPServer(('127.0.0.1', 0), Foreign) as foreign:
             foreign.requests = 0
             thread = threading.Thread(target=foreign.serve_forever, daemon=True)
             thread.start()
@@ -205,7 +205,7 @@ class CortexServerTests(unittest.TestCase):
         outside.write_text('outside fixture')
         (web / 'escape.txt').symlink_to(outside)
         (web / 'alias.html').symlink_to(web / 'index.html')
-        with patch.object(server, 'WEB', web), ThreadingHTTPServer(('127.0.0.1', 0), server.StaticHandler) as fixture:
+        with patch.object(server, 'WEB', web), patch.object(server.socket, 'getfqdn', side_effect=AssertionError('Loopback must not need DNS')), server.CortexHTTPServer(('127.0.0.1', 0), server.StaticHandler) as fixture:
             thread = threading.Thread(target=fixture.serve_forever, daemon=True)
             thread.start()
             try:
@@ -244,6 +244,20 @@ class CortexServerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(result['status'], 'stopped')
         self.assertFalse(path.exists())
+
+    def test_worker_self_exits_when_binding_cannot_finish_before_registration(self):
+        code = (
+            'import time; from brain_bridge import cortex_server as s; '
+            's.TIMEOUT=.1; s.CortexHTTPServer=lambda *a,**kw: time.sleep(30); '
+            'raise SystemExit(s.worker())'
+        )
+        result = subprocess.run(
+            [sys.executable, '-B', '-c', code], cwd=ROOT, env=self.env,
+            input=json.dumps({'instance': '1' * 32, 'token': '2' * 64, 'port': 0}) + '\n',
+            capture_output=True, text=True, timeout=5
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('startup deadline', result.stderr)
 
     def test_port_collision_is_an_error_and_leaves_no_state_or_stranded_worker(self):
         with socket.socket() as sock:
