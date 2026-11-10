@@ -40,10 +40,14 @@
       <p>Read source status and request cited context through the existing Brain Bridge
         authority. This is not a shared service, source grant or complete Cortex application.</p>
       <div class="controls">
-        <button id="synapses-connect" type="button">Connect to Synapses</button>
+        <label for="synapses-brain">Configured Brain
+          <select id="synapses-brain" disabled><option value="">Open through the launcher</option></select>
+        </label>
+        <button id="synapses-connect" type="button" disabled>Connect</button>
         <button id="synapses-disconnect" type="button" hidden>Disconnect</button>
       </div>
-      <p id="synapses-notice" class="notice" role="status">Not connected. Owner pairing is required before any private source read.</p>
+      <p id="synapses-notice" class="notice" role="status">Not connected. Open Cortex through its launcher to establish a trusted local tab, then select your Brain and Connect.</p>
+      <p id="synapses-preference" role="status"></p>
       <p id="synapses-pairing"></p>
       <p id="synapses-source"></p>
       <form id="synapses-form" hidden>

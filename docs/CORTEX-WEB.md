@@ -17,9 +17,10 @@ web/
     activity.mjs            per-page request lifecycle and subscriptions
     client.mjs              injected JSON transport; no product endpoints
     synapses.mjs            explicit local read routes and receipt validation
+    bootstrap.mjs           one-use launch transfer from the exact opener
   components/
     api-status.mjs          request status button and disclosure
-    synapses.mjs            owner pairing, source status and cited Recall
+    synapses.mjs            configured Brain selection, status and cited Recall
   styles/
     themes.css              selected shared palette tokens
     base.css                layout, focus, activity and reduced-motion rules
@@ -30,9 +31,10 @@ cortex_server               source-checkout lifecycle launcher
 brain_bridge/
   cortex_server.py          owned loopback preview and private CLI control
   cortex_synapses.py        expiring local sessions; delegates managed reads
+  cortex_launch.py          short-lived owner-private browser launch document
 tests/
   test_cortex_server.py     isolated real-process lifecycle behavior
-  test_cortex_synapses.py   synthetic pairing, authority and HTTP boundaries
+  test_cortex_synapses.py   synthetic bootstrap, authority and HTTP boundaries
 ```
 
 Keep transport and activity independent of DOM rendering. Future product
@@ -89,15 +91,21 @@ Exit 0 means the requested start/stop succeeded or status is running; status
 stopped/stale and lifecycle errors return 1, and invalid arguments return 2.
 `--help` and `--version` are supported. There is no restart, installation,
 boot-service registration, remote binding or deployment operation.
-`--pair BROWSER_ID` additionally approves a pending local browser tab as described
-below; it does not change upstream grants or print session credentials.
+`--open` asks the native browser to open a private one-click launch page for the
+running configured server. A successful result confirms the launch request, not
+browser readiness or upstream access. Missing/blocked native launch is an error,
+revokes its bootstrap and removes the private file without stopping the server.
+`--pair BROWSER_ID` remains only as a legacy diagnostic interface; the normal UI
+neither displays nor requires it.
 
 Only `web/` is served; hidden paths, traversal, symlinks and directory listings
 are rejected. An authenticated loopback `/_cortex/lifecycle` control is internal
 process ownership/shutdown plumbing, not a browser data API or API-badge
-activity source. Opening the page or its API details makes no backend
-requests. Theme preferences use only `cortex.theme` in browser storage; denied
-storage is visibly reported and does not prevent an in-page theme change.
+activity source. Opening a plain URL or API details makes no backend requests.
+A trusted launch exchanges its short-lived bootstrap but does not read a source
+until Connect. Theme/source preferences use only `cortex.theme` and
+`cortex.source` in browser local storage; denied storage is visibly reported.
+Credentials, queries and results are never placed there or in session storage.
 
 Run behavioral coverage with Node.js 22+ (no npm packages):
 
@@ -172,6 +180,7 @@ profile's `cli` string. Select an existing consultation profile explicitly:
 # Stop only an owned preview when applying new server code or configuration.
 ./cortex_server --stop
 ./cortex_server --start --synapses-profile /absolute/private/consult.json
+./cortex_server --open
 ```
 
 The existing profile supplies `identity_repo`, `source_repo`, `source` (registered
@@ -188,27 +197,56 @@ explicit profile rejects that case. Stop/start the owned instance deliberately.
 Starting without a profile still serves the foundation, but local reads return
 `not_configured`; no ambient source is inferred.
 
-1. Open the reported `http://127.0.0.1:PORT/` URL and click **Connect to Synapses**.
-2. Run the displayed `./cortex_server --pair BROWSER_ID` in this task checkout
-   (with the same `--runtime-dir`, if overridden). The ID identifies the pending
-   tab; it is not a credential and cannot approve itself.
-3. Click **Check pairing**. Cortex verifies source status through the existing
-   upstream authority, then enables bounded **Recall**. **Disconnect** revokes
-   this tab's local session and clears its displayed data.
+1. Run `./cortex_server --open` using the same `--runtime-dir`, if overridden.
+   The native browser opens an owner-private launch document.
+2. Click **Open Cortex** on that document. It opens the clean
+   `http://127.0.0.1:PORT/` tab and automatically establishes local browser trust.
+3. Select **Configured Brain**, then **Connect**. Cortex checks existing upstream
+   authority and source status before enabling bounded **Recall**.
+   **Disconnect** immediately disables reads and clears displayed data; reconnect
+   is available in the same trusted tab until its fixed session expiry.
 
-Pairing approval uses the existing owner-private lifecycle credential only on
-the separate internal `/_cortex/pair` route. It is never given to the browser or
-used as a data token. An older worker rejects this new route rather than
-misinterpreting a pairing request as shutdown.
+The current external profile selects **one** registered named source. Only that
+alias appears in the selector; this does not add multiple-profile discovery.
+The non-sensitive alias choice is remembered and accepted only if still present
+in the server-provided list. An unavailable/denied Brain returns an explicit
+error, never a new grant. Existing Git/Brain access remains the record authority;
+local launch only protects the backend from unrelated browser callers.
 
-There is one approved **tab** per server process, with five-minute pending
-requests, a fixed 30-minute approved lifetime and at most eight pending sessions.
-Approval replaces other sessions. Restart, expiry and disconnect revoke access;
-the server rechecks the session after each managed read before returning data.
-The browser clears displayed results on read errors, logout and local expiry,
-never persists queries/results, and ignores late replies after cancellation.
-Reloading or using a different tab requires new pairing; concurrent-tab/shared
-session behavior is not claimed.
+### Credential-free URL launch
+
+The internal authenticated `/_cortex/open` control creates an unpredictable,
+owner-private HTML file inside the existing private runtime directory. A random
+single-use credential expires in 60 seconds and is never printed or placed in a
+URL, fragment, referrer, form submission, browser storage or persisted history
+URL. The file is deleted on exchange, expiry, replacement, launch failure or
+normal server shutdown. Content modified by another writer is preserved rather
+than deleted. After an abrupt process/host crash, expired private launch files
+may remain; their old credentials cannot authorize a new process. Do not copy
+these private documents or the runtime directory into source or shared storage.
+
+The launch page uses a user click to open the clean Cortex URL without relying
+on popup bypasses. It accepts readiness only from that window at the exact
+configured origin and transfers the credential using exact-origin
+`postMessage`. The app accepts one transfer only from its actual file opener
+(opaque `null` origin), redeems it through a same-origin POST bound to its fresh
+tab key, then drops the opener. The ready/complete handshake messages contain
+no credential or source data; only these non-sensitive replies use `*` because
+the local file has an opaque origin. No `null`-origin HTTP authorization or CORS
+exception is added. A duplicate/expired/wrong credential is rejected atomically.
+The launch document has restrictive script CSP and no-referrer policy.
+
+There is one approved **tab** per server process and a fixed 30-minute local
+session. A new successful launch exchange replaces other sessions. Restart and
+expiry revoke browser trust; disconnect revokes read access while retaining
+that fixed-lifetime trust for reconnect. The server rechecks the connected
+session after each managed read before disclosure. The browser clears results
+on errors, disconnect and local expiry, and ignores late replies after
+cancellation. Reload/different-tab requires `--open` again; a plain URL or UI
+Connect alone is not proof of local browser identity. Concurrent-tab/shared
+session behavior is not claimed. The old manual pairing control remains
+available for diagnostics (five-minute pending IDs, at most eight), not the
+normal connection experience.
 
 An HttpOnly, SameSite=Strict cookie is combined with a cryptographically random
 tab key held only in JavaScript memory and sent in a custom header. **Loopback
@@ -224,12 +262,13 @@ Version-1 HTTP contract (all routes are POST, JSON, under `/api/local/`):
 
 | Route | Request | Result |
 | --- | --- | --- |
-| `session` | `{}` | `pairing_required` or `paired`, public pending ID and remaining lifetime; HttpOnly cookie. No source read. |
-| `disconnect` | `{}` | `disconnected`; local session revoked, cookie cleared. No source mutation. |
+| `bootstrap` | Private single-use credential | `trusted`, configured alias list and remaining lifetime; tab-bound HttpOnly cookie. No source read or grant. |
+| `session` | `{"source":"example"}` | `paired` local read session only for the existing configured alias. No filesystem paths or alternate grants. |
+| `disconnect` | `{}` | `disconnected`; reads disabled, fixed-lifetime tab trust retained for Connect. No source mutation. |
 | `status` | `{}` | Authorized named-source receipt, `ready`, source verification/synchronization and separate cache freshness/counts. |
 | `synapse` | `{"query":"synthetic term"}` | Existing `found`/`no_match` receipt, at most five cited matches with excerpts up to 240 Unicode code points. |
 
-Requests accept no extra fields, source overrides, filesystem paths or command
+Requests accept no extra fields, unconfigured source aliases, filesystem paths or command
 inputs. Bodies are limited to 4 KiB, query strings to 1-512 characters, responses
 to 256 KiB and one managed read may run at a time (otherwise HTTP 429). The
 managed functions retain their existing bounded upstream command timeouts;
@@ -237,7 +276,7 @@ the browser stops waiting after 90 seconds. Browser cancellation does **not**
 claim to cancel an already executing server-side read; a subsequent read may
 remain busy until it finishes. There is no automatic retry or polling.
 
-HTTP 401 means local pairing expired/missing, 403 denies a caller or source,
+HTTP 401 means local launch/session expired or missing, 403 denies a caller or source,
 503 means not configured/upstream authority unavailable, and 502 means a failed
 managed read. Unexpected fields or malformed bodies return 400. Raw private
 diagnostic messages, paths, credentials, query strings and excerpts are omitted
@@ -252,7 +291,10 @@ and supersession metadata. The UI renders excerpts as text, validates immutable
 GitHub citations against the source snapshot and shows supersession rather than
 treating old context as authority. Private examples/configuration are not part
 of this public source tree. Offline tests mock only the managed source boundary,
-exercise real local HTTP and CLI pairing, and require no private grant or data.
+exercise real local HTTP, bootstrap replay/expiry/concurrency, native-launch
+failure cleanup, tab/origin isolation and configured-source decisions, and
+require no private grant or data. Browser tests also cover one-use opener
+handoff, credential-free readiness messages, source preferences and reconnect.
 
 ## Reference implementation and adaptation
 

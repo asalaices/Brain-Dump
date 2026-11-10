@@ -11,10 +11,16 @@ export function citationUrl(value) {
 
 export function validateReceipt(value) {
   if (!value || value.schema_version !== 1) throw new TypeError('Unsupported local API response.');
-  if (['pairing_required', 'paired'].includes(value.status)) {
+  if (['pairing_required', 'paired', 'trusted'].includes(value.status)) {
     if (!/^[a-f0-9]{32}$/.test(value.pairing_id) || !Number.isInteger(value.expires_in_seconds) ||
         value.expires_in_seconds < 0 || value.expires_in_seconds > 1800) {
       throw new TypeError('Invalid browser pairing response.');
+    }
+    if (value.status === 'trusted' || value.sources !== undefined) {
+      if (!Array.isArray(value.sources) || value.sources.length !== 1 ||
+          typeof value.sources[0] !== 'string' || !value.sources[0].trim() || value.sources[0].length > 128) {
+        throw new TypeError('Invalid configured Brain selection.');
+      }
     }
   } else if (['ready', 'found', 'no_match'].includes(value.status)) {
     if (value.read_only !== true || !value.request_id || !value.source?.name ||
@@ -61,7 +67,7 @@ export function createSynapsesClient({origin, activity, fetchImpl}) {
   const browserKey = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
   return Object.freeze({
     request(operation, body = {}, signal) {
-      if (!['session', 'disconnect', 'status', 'synapse'].includes(operation)) {
+      if (!['bootstrap', 'session', 'disconnect', 'status', 'synapse'].includes(operation)) {
         throw new TypeError('Unsupported local read operation.');
       }
       return client.requestJson(operation, {

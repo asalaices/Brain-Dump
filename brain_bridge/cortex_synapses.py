@@ -17,6 +17,7 @@ import time
 from uuid import uuid4
 
 from .adapters import managed_status
+from .cortex_launch import create_document
 from .installation.discovery import safe
 from .policy import AccessDenied, AuthorizationUnavailable
 from .store import unique_object, reject_constant
@@ -48,6 +49,8 @@ def load_profile(path, root):
     if not isinstance(profile, dict) or any(not isinstance(profile.get(key), str) or not profile[key].strip() for key in keys):
         raise ValueError('Consultation profile needs identity_repo, source_repo, source and cache_dir.')
     selected = {key: profile[key] for key in keys}
+    if len(selected['source']) > 128:
+        raise ValueError('Configured source alias must be at most 128 characters.')
     for key in ('identity_repo', 'source_repo', 'cache_dir'):
         selected[key] = Path(selected[key]).expanduser()
         if not selected[key].is_absolute():
@@ -63,12 +66,71 @@ class LocalSynapses:
         self.profile = profile
         self.clock = clock
         self.sessions = {}
+        self.bootstrap = None
         self.lock = threading.Lock()
         self.operation = threading.BoundedSemaphore(1)
 
     def _prune(self):
         now = self.clock()
         self.sessions = {key: value for key, value in self.sessions.items() if value['expires'] > now}
+
+    def launch(self, runtime, origin):
+        if self.profile is None:
+            raise ValueError('Start Cortex with an external consultation profile before opening its connected UI.')
+        if runtime is None:
+            raise ValueError('Restart Cortex to enable its private native browser launcher.')
+        with self.lock:
+            self._cancel_launch()
+            credential = secrets.token_hex(32)
+            path, cleanup = create_document(runtime, origin, credential)
+            self.bootstrap = {'credential': credential, 'expires': self.clock() + 60, 'cleanup': cleanup}
+            timer = threading.Timer(60, self.cancel_launch, args=(credential,))
+            timer.daemon = True
+            self.bootstrap['timer'] = timer
+            timer.start()
+            return {'schema_version': 1, 'status': 'launch_ready', 'launch_file': str(path)}
+
+    def _cancel_launch(self):
+        if self.bootstrap is not None:
+            self.bootstrap['timer'].cancel()
+            self.bootstrap['cleanup']()
+            self.bootstrap = None
+
+    def cancel_launch(self, credential=None):
+        with self.lock:
+            if credential is None or (self.bootstrap and hmac.compare_digest(self.bootstrap['credential'], credential)):
+                self._cancel_launch()
+
+    def redeem(self, credential, browser_key):
+        with self.lock:
+            launch = self.bootstrap
+            if launch and launch['expires'] <= self.clock():
+                self._cancel_launch()
+                launch = None
+            if not launch or not hmac.compare_digest(launch['credential'], credential):
+                return None, {'status': 'launch_required'}
+            self._cancel_launch()
+            token = secrets.token_hex(32)
+            self.sessions = {token: {'status': 'trusted', 'pairing_id': uuid4().hex,
+                                     'key': browser_key, 'expires': self.clock() + 1800}}
+            return token, self._receipt(self.sessions[token])
+
+    def _receipt(self, row):
+        return {key: row[key] for key in ('status', 'pairing_id')} | {
+            'expires_in_seconds': max(0, int(row['expires'] - self.clock())),
+            'sources': [self.profile['source']]
+        }
+
+    def connect(self, token, browser_key, source):
+        with self.lock:
+            self._prune()
+            row = self.sessions.get(token)
+            if not row or not hmac.compare_digest(row['key'], browser_key) or row['status'] not in ('trusted', 'paired'):
+                return 401, {'status': 'launch_required'}
+            if source != self.profile['source']:
+                return 403, {'status': 'denied'}
+            row['status'] = 'paired'
+            return 200, self._receipt(row)
 
     def session(self, token, browser_key):
         with self.lock:
@@ -98,7 +160,7 @@ class LocalSynapses:
                              if row['pairing_id'] == request_id and row['status'] == 'pairing_required'), None)
             if selected is None:
                 raise ValueError('No unexpired pending browser matches this pairing ID.')
-            # One owner-approved browser session per process, shared by its tabs.
+            # One owner-approved tab per process.
             self.sessions = {selected: {**self.sessions[selected], 'status': 'paired',
                                         'expires': self.clock() + 1800}}
         return {'schema_version': 1, 'status': 'paired', 'expires_in_seconds': 1800}
@@ -107,7 +169,7 @@ class LocalSynapses:
         with self.lock:
             row = self.sessions.get(token)
             if row and hmac.compare_digest(row['key'], browser_key):
-                self.sessions.pop(token)
+                row['status'] = 'trusted'
 
     def read(self, token, operation, body, browser_key):
         if self.session(token, browser_key) != 'paired':
@@ -182,7 +244,7 @@ def handle(handler):
         reply(handler, 503, {'status': 'not_configured'})
         return
     endpoint = handler.path.removeprefix(PREFIX)
-    if endpoint not in ('session', 'disconnect', 'status', 'synapse'):
+    if endpoint not in ('bootstrap', 'session', 'disconnect', 'status', 'synapse'):
         reply(handler, 404, {'status': 'not_found'})
         return
     if handler.headers.get('Content-Type') != 'application/json' or handler.headers.get('Transfer-Encoding') is not None:
@@ -197,20 +259,32 @@ def handle(handler):
         if len(raw) != length:
             raise ValueError('Incomplete body')
         body = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant)
-        if not isinstance(body, dict) or set(body) != ({'query'} if endpoint == 'synapse' else set()):
+        shapes = {'bootstrap': {'credential'}, 'synapse': {'query'}}
+        allowed = shapes.get(endpoint, set())
+        if not isinstance(body, dict) or (set(body) != allowed and not (endpoint == 'session' and set(body) == {'source'})):
             raise ValueError('Unexpected fields')
+        if endpoint == 'bootstrap' and (not isinstance(body['credential'], str) or not re.fullmatch('[a-f0-9]{64}', body['credential'])):
+            raise ValueError('Invalid launch credential')
+        if endpoint == 'session' and 'source' in body and (not isinstance(body['source'], str) or len(body['source']) > 128):
+            raise ValueError('Invalid source')
         if endpoint == 'synapse' and (not isinstance(body['query'], str) or not body['query'].strip() or len(body['query']) > 512):
             raise ValueError('Invalid query')
     except (ValueError, UnicodeError, OSError):
         reply(handler, 400, {'status': 'invalid_request'})
         return
     token = cookie_token(handler.headers)
-    if endpoint == 'session':
+    if endpoint == 'bootstrap':
+        selected, result = app.redeem(body['credential'], browser_key)
+        reply(handler, 200 if selected else 401, result, token=selected)
+    elif endpoint == 'session' and 'source' in body:
+        code, result = app.connect(token, browser_key, body['source'])
+        reply(handler, code, result)
+    elif endpoint == 'session':
         selected, result = app.begin(token, browser_key)
         reply(handler, 200 if selected else 429, result, token=selected if selected != token else None)
     elif endpoint == 'disconnect':
         app.disconnect(token, browser_key)
-        reply(handler, 200, {'status': 'disconnected'}, clear=True)
+        reply(handler, 200, {'status': 'disconnected'})
     else:
         code, result = app.read(token, endpoint, body, browser_key)
         reply(handler, code, result)

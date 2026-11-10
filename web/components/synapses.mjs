@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {HttpError} from '../api/client.mjs';
 import {citationUrl, createSynapsesClient} from '../api/synapses.mjs';
+import {receiveLaunch} from '../api/bootstrap.mjs';
 
 export function renderMatches(documentTarget, target, receipt) {
   target.replaceChildren();
@@ -23,7 +24,8 @@ export function renderMatches(documentTarget, target, receipt) {
 
 export function bindSynapses({
   activity, documentTarget, getOrigin = () => window.location.origin,
-  fetchImpl = (...args) => globalThis.fetch(...args)
+  fetchImpl = (...args) => globalThis.fetch(...args),
+  windowTarget = globalThis.window, getStorage = () => windowTarget.localStorage
 }) {
   const select = id => documentTarget.querySelector(`#${id}`);
   const connect = select('synapses-connect');
@@ -35,11 +37,50 @@ export function bindSynapses({
   const pairing = select('synapses-pairing');
   const source = select('synapses-source');
   const results = select('synapses-results');
+  const brain = select('synapses-brain');
+  const preference = select('synapses-preference');
   let client;
   let controller;
   let expires;
   let generation = 0;
   let paired = false;
+  let trusted = false;
+
+  function remember() {
+    try {
+      getStorage().setItem('cortex.source', brain.value);
+      preference.textContent = '';
+    } catch {
+      preference.textContent = 'Source preference storage is unavailable. Selection lasts only for this page.';
+    }
+  }
+
+  function trust(receipt) {
+    trusted = true;
+    brain.replaceChildren();
+    for (const alias of receipt.sources) {
+      const option = documentTarget.createElement('option');
+      option.value = alias;
+      option.textContent = alias;
+      brain.append(option);
+    }
+    brain.value = receipt.sources[0];
+    try {
+      const saved = getStorage().getItem('cortex.source');
+      if (receipt.sources.includes(saved)) brain.value = saved;
+      else if (saved !== null) preference.textContent = 'Previously selected Brain is not configured in this launcher.';
+    } catch {
+      preference.textContent = 'Source preference storage is unavailable. Selection lasts only for this page.';
+    }
+    clearTimeout(expires);
+    expires = setTimeout(() => {
+      trusted = false;
+      forget();
+      notice.textContent = 'Local session expired. Reopen Cortex through its launcher; displayed private data was cleared.';
+    }, receipt.expires_in_seconds * 1000);
+    notice.textContent = 'Trusted local tab ready. Select the configured Brain and Connect. Upstream access is checked on every read.';
+    controls();
+  }
 
   function clear() {
     source.textContent = '';
@@ -48,7 +89,8 @@ export function bindSynapses({
   }
 
   function controls(busy = false) {
-    connect.disabled = busy;
+    connect.disabled = busy || !trusted;
+    brain.disabled = busy || !trusted || paired;
     submit.disabled = busy || !paired;
     form.hidden = !paired;
     disconnect.hidden = !client;
@@ -57,11 +99,10 @@ export function bindSynapses({
   function forget() {
     generation += 1;
     controller?.abort();
-    clearTimeout(expires);
     paired = false;
     clear();
     query.value = '';
-    connect.textContent = 'Connect to Synapses';
+    connect.textContent = 'Connect';
     controls();
   }
 
@@ -89,29 +130,25 @@ export function bindSynapses({
       if (current !== generation) return;
       if (receipt.status === 'pairing_required') {
         paired = false;
-        connect.textContent = 'Check pairing';
-        pairing.textContent = `Approve this browser in your task checkout: ./cortex_server --pair ${receipt.pairing_id}`;
-        notice.textContent = `Owner approval required. This tab has no source access yet. Pairing expires in ${receipt.expires_in_seconds} seconds.`;
+        trusted = false;
+        notice.textContent = 'Reopen Cortex through its launcher to establish a trusted tab. Git access remains required upstream.';
       } else if (receipt.status === 'paired') {
-        paired = true;
-        connect.textContent = 'Refresh source status';
-        clearTimeout(expires);
-        expires = setTimeout(() => {
-          forget();
-          notice.textContent = 'Local session expired. Pair again; no private results are retained on this page.';
-        }, receipt.expires_in_seconds * 1000);
+        trust(receipt);
         controls(true);
         const status = await client.request('status', {}, signal);
         if (current !== generation) return;
+        paired = true;
+        connect.textContent = 'Refresh source status';
+        remember();
         describeSource(status);
-        notice.textContent = `Owner-paired read-only connection. ${status.count} entries in the authorized source.`;
+        notice.textContent = `Connected read-only. ${status.count} entries in the authorized source.`;
       } else if (receipt.status === 'disconnected') {
         forget();
         notice.textContent = 'Disconnected. Local browser access revoked and displayed results cleared.';
       } else {
         describeSource(receipt);
         if (receipt.status === 'ready') {
-          notice.textContent = `Owner-paired read-only connection. ${receipt.count} entries in the authorized source.`;
+          notice.textContent = `Connected read-only. ${receipt.count} entries in the authorized source.`;
         } else {
           renderMatches(documentTarget, results, receipt);
           notice.textContent = receipt.status === 'no_match' ? 'No matching reference in the authorized source.' :
@@ -122,8 +159,9 @@ export function bindSynapses({
       if (current !== generation) return;
       clear();
       if (error instanceof HttpError && error.status === 401) {
+        trusted = false;
         forget();
-        notice.textContent = 'Local session expired or revoked. Pair again before reading.';
+        notice.textContent = 'Local session expired or revoked. Reopen Cortex through its launcher.';
       } else {
         const message = error instanceof HttpError ? ({
           403: 'Source access denied or reader not synchronized. No current results are shown.',
@@ -141,9 +179,15 @@ export function bindSynapses({
     }
   }
 
-  const onConnect = () => run(paired ? 'status' : 'session');
+  const onConnect = () => trusted ? run(paired ? 'status' : 'session', paired ? {} : {source: brain.value}) : undefined;
   const onDisconnect = () => {
-    forget();
+    // Disconnect read access, not the fixed-lifetime trust established by native launch.
+    generation += 1;
+    controller?.abort();
+    paired = false;
+    clear();
+    query.value = '';
+    connect.textContent = 'Connect';
     return run('disconnect');
   };
   const onSubmit = event => {
@@ -153,10 +197,26 @@ export function bindSynapses({
   connect.addEventListener('click', onConnect);
   disconnect.addEventListener('click', onDisconnect);
   form.addEventListener('submit', onSubmit);
+  brain.addEventListener('change', remember);
+  let disposeLaunch = () => {};
+  if (windowTarget?.opener) {
+    client = createSynapsesClient({origin: getOrigin(), activity, fetchImpl});
+    disposeLaunch = receiveLaunch({
+      windowTarget, client, onReady: trust,
+      onError: () => {
+        notice.textContent = 'Trusted launch expired or failed. Reopen Cortex through its launcher. No access grant was changed.';
+        controls();
+      }
+    });
+  }
+  controls();
   return () => {
+    disposeLaunch();
+    clearTimeout(expires);
     connect.removeEventListener('click', onConnect);
     disconnect.removeEventListener('click', onDisconnect);
     form.removeEventListener('submit', onSubmit);
+    brain.removeEventListener('change', remember);
     forget();
     connect.disabled = true;
     disconnect.disabled = true;

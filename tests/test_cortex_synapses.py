@@ -5,6 +5,7 @@ from http.client import HTTPConnection
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -36,6 +37,12 @@ class LocalSynapsesTests(unittest.TestCase):
         self.http = server.CortexHTTPServer(('127.0.0.1', 0), server.StaticHandler)
         self.http.daemon_threads = True
         self.http.synapses = self.app
+        self.temporary = tempfile.TemporaryDirectory(prefix='cortex-launch-test-')
+        self.addCleanup(self.temporary.cleanup)
+        self.runtime = Path(self.temporary.name).resolve()
+        self.runtime.chmod(0o700)
+        self.http.runtime = self.runtime
+        self.addCleanup(self.app.cancel_launch)
         self.state = {
             'schema_version': 1, 'pid': os.getpid(), 'instance': '1' * 32, 'token': '2' * 64,
             'host': '127.0.0.1', 'port': self.http.server_port, 'root': str(server.ROOT)
@@ -71,6 +78,139 @@ class LocalSynapsesTests(unittest.TestCase):
         request_id, cookie = self.pending()
         server.control(self.state, pair=request_id)
         return cookie
+
+    def bootstrap(self):
+        result = server.control(self.state, launch='issue')
+        path = Path(result['launch_file'])
+        html = path.read_text()
+        credential = re.search(r'let credential = "([a-f0-9]{64})";', html).group(1)
+        self.assertNotIn(credential, json.dumps(result))
+        return credential, path, html
+
+    def trusted(self):
+        credential, path, _ = self.bootstrap()
+        code, result, headers = self.post('bootstrap', {'credential': credential})
+        self.assertEqual((code, result['status']), (200, 'trusted'))
+        self.assertFalse(path.exists())
+        self.assertEqual(result['sources'], ['example'])
+        return headers['Set-Cookie'].split(';')[0]
+
+    def test_native_launch_uses_private_file_not_credential_url_and_cleans_on_redemption(self):
+        (self.runtime / 'state.json').write_text(json.dumps(self.state))
+        (self.runtime / 'state.json').chmod(0o600)
+        with patch.object(server.webbrowser, 'open', return_value=True) as opened:
+            result, code = server.operate('open', self.runtime, 8080)
+        self.assertEqual(code, 0)
+        self.assertEqual(result['browser'], 'launch_requested')
+        self.assertNotIn('launch_file', result)
+        uri = opened.call_args.args[0]
+        self.assertTrue(uri.startswith(self.runtime.as_uri()))
+        self.assertTrue(uri.endswith('.html'))
+        self.assertNotIn('?', uri)
+        self.assertNotIn('#', uri)
+        path = next(self.runtime.glob('launch-*.html'))
+        raw = path.read_text()
+        credential = re.search(r'let credential = "([a-f0-9]{64})";', raw).group(1)
+        self.assertNotIn(credential, uri + json.dumps(result))
+        self.assertIn('content="no-referrer"', raw)
+        self.assertIn("child.postMessage({type: 'cortex-bootstrap', credential}, origin)", raw)
+        self.assertNotIn('localStorage', raw)
+        self.assertNotIn('location.hash', raw)
+        if os.name != 'nt':
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.post('bootstrap', {'credential': credential})[0], 200)
+        self.assertFalse(path.exists())
+
+    def test_native_launch_failure_cancels_bootstrap_and_leaves_server_running(self):
+        (self.runtime / 'state.json').write_text(json.dumps(self.state))
+        (self.runtime / 'state.json').chmod(0o600)
+        for error in (False, OSError('synthetic native failure')):
+            with patch.object(server.webbrowser, 'open', side_effect=error if isinstance(error, Exception) else None,
+                              return_value=error):
+                with self.assertRaises((ValueError, OSError)):
+                    server.operate('open', self.runtime, 8080)
+            self.assertEqual(list(self.runtime.glob('launch-*.html')), [])
+            self.assertIsNone(self.app.bootstrap)
+            self.assertTrue(server.control(self.state))
+
+    def test_bootstrap_wrong_origin_host_key_and_replay_cannot_read_or_consume_valid_launch(self):
+        credential, path, _ = self.bootstrap()
+        for fields in ({'Origin': 'null'}, {'Origin': 'http://127.0.0.1:9999'},
+                       {'Host': 'example.invalid'}, {'X-Cortex-Browser': ''}):
+            self.assertEqual(self.post('bootstrap', {'credential': credential}, headers=fields)[0], 403)
+            self.assertTrue(path.exists())
+        self.assertEqual(self.post('bootstrap', {'credential': '0' * 64})[0], 401)
+        self.assertTrue(path.exists())
+        code, result, headers = self.post('bootstrap', {'credential': credential})
+        self.assertEqual(code, 200)
+        self.assertEqual(result['status'], 'trusted')
+        cookie = headers['Set-Cookie'].split(';')[0]
+        self.assertEqual(self.post('bootstrap', {'credential': credential})[0], 401)
+        self.assertEqual(self.post('status', cookie=cookie)[0], 401)
+        self.assertEqual(self.post('session', {'source': 'example'}, cookie,
+                                   headers={'X-Cortex-Browser': '4' * 64})[0], 401)
+        self.status.assert_not_called()
+
+    def test_bootstrap_expiry_replacement_and_timer_race_preserve_new_launch(self):
+        now = [0]
+        self.app.clock = lambda: now[0]
+        old, path, _ = self.bootstrap()
+        latest, second, _ = self.bootstrap()
+        self.assertFalse(path.exists())
+        self.app.cancel_launch(old)
+        self.assertTrue(second.exists())
+        self.assertEqual(self.post('bootstrap', {'credential': old})[0], 401)
+        now[0] = 61
+        self.assertEqual(self.post('bootstrap', {'credential': latest})[0], 401)
+        self.assertFalse(second.exists())
+        self.assertIsNone(self.app.bootstrap)
+
+    def test_bootstrap_atomic_single_use_even_under_concurrent_redemption(self):
+        credential, path, _ = self.bootstrap()
+        barrier = threading.Barrier(3)
+        results = []
+        def redeem(key):
+            barrier.wait(timeout=3)
+            results.append(self.app.redeem(credential, key))
+        threads = [threading.Thread(target=redeem, args=(digit * 64,)) for digit in ('3', '4')]
+        for thread in threads:
+            thread.start()
+        barrier.wait(timeout=3)
+        for thread in threads:
+            thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(sum(token is not None for token, _ in results), 1)
+        self.assertFalse(path.exists())
+
+    def test_configured_source_only_connect_disconnect_and_reconnect_still_reauthorize(self):
+        cookie = self.trusted()
+        for source in ('other', '/private/path', 'https://other.invalid'):
+            self.assertEqual(self.post('session', {'source': source}, cookie)[0], 403)
+        self.status.assert_not_called()
+        self.assertEqual(self.post('session', {'source': 'example'}, cookie)[1]['status'], 'paired')
+        self.assertEqual(self.post('status', cookie=cookie)[0], 200)
+        self.assertEqual(self.post('disconnect', cookie=cookie)[0], 200)
+        self.assertEqual(self.post('status', cookie=cookie)[0], 401)
+        self.assertEqual(self.post('session', {'source': 'example'}, cookie)[0], 200)
+        self.status.side_effect = AccessDenied('private source revoked')
+        with self.assertLogs(local.LOG, level='WARNING'):
+            self.assertEqual(self.post('status', cookie=cookie)[0], 403)
+        self.assertEqual(self.status.call_count, 2)
+
+    def test_cleanup_never_deletes_replacement_or_foreign_content(self):
+        _, path, _ = self.bootstrap()
+        path.write_text('foreign replacement')
+        self.app.cancel_launch()
+        self.assertEqual(path.read_text(), 'foreign replacement')
+
+    def test_unconfigured_bootstrap_and_untrusted_native_control_fail_closed(self):
+        self.app.profile = None
+        with self.assertRaises(ValueError):
+            server.control(self.state, launch='issue')
+        self.assertEqual(list(self.runtime.glob('launch-*.html')), [])
+        self.app.profile = PROFILE
+        for body in ({}, {'credential': 'bad'}, {'credential': 'a' * 64, 'source_repo': '/other'}):
+            self.assertEqual(self.post('bootstrap', body)[0], 400)
 
     def test_owner_control_pairs_only_selected_browser_and_cookie_is_private(self):
         first_id, first = self.pending()
