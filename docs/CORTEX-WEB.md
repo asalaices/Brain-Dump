@@ -22,26 +22,71 @@ web/
     base.css                layout, focus, activity and reduced-motion rules
 tests/web/
   foundation.test.mjs       offline behavioral and local HTTP fixture tests
+cortex_server               source-checkout lifecycle launcher
+brain_bridge/
+  cortex_server.py          owned loopback static server; no product API
+tests/
+  test_cortex_server.py     isolated real-process lifecycle behavior
 ```
 
 Keep transport and activity independent of DOM rendering. Future product
 adapters belong under `web/api/`; they must implement reviewed browser contracts,
 not call infrastructure telemetry or invent replacements for Brain Bridge.
 Future screens consume those adapters, not `fetch` scattered through the UI.
-The framework's Python CLI and installed package are unchanged; these source
-assets are not yet a packaged application/server.
+The framework's `brain-bridge` CLI is unchanged. The preview launcher and web
+assets are source-checkout tooling, not an installed application/server command.
 
 ## Run and test
 
-For a local, static preview from the repository root, with Python 3.11+:
+For a local static preview, run from the repository root with Python 3.11+:
 
 ```sh
-python3 -m http.server 8080 --bind 127.0.0.1 --directory web
+./cortex_server --start
+./cortex_server --status --pretty
+./cortex_server --stop
 ```
 
-Open `http://127.0.0.1:8080/` and stop the process when finished. If that port is
-occupied, select an unused port; do not stop the other process. The static server
-does not provide an API. Opening the page or its API details makes no backend
+Use the URL in the start result (default `http://127.0.0.1:8080/`).
+On Windows, use `python cortex_server` instead of `./cortex_server`, with the same
+arguments. On POSIX, the launcher selects an available Python 3.11+ when the
+default `python3` is older; `CORTEX_PYTHON` is a strict interpreter override.
+No packages need installing for this preview.
+
+`--start` waits for authenticated readiness before returning, and repeated
+starts reuse the owned instance. `--stop` is idempotent and removes stopped
+instance metadata; it never signals a PID. Stale metadata cannot cause an
+unrelated process to be killed. A responsive foreign listener, mismatched
+identity, invalid metadata or lock contention is an explicit error, not success.
+Startup failure closes the controller pipe so an unregistered worker exits.
+Stop verifies authenticated self-shutdown and listener closure.
+
+Configuration is deliberately narrow:
+
+| Setting | Meaning |
+| --- | --- |
+| `--port N` / `CORTEX_PORT` | Default 8080; 0 selects an available ephemeral port. A busy port fails without stopping its occupant. |
+| `--runtime-dir PATH` / `CORTEX_RUNTIME_DIR` | Private directory outside the checkout; use the same selection for every command. |
+| `CORTEX_HOST` | Only `127.0.0.1` and `localhost` accepted; always binds IPv4 loopback. |
+| `CORTEX_PYTHON` | Explicit Python 3.11+ executable; an invalid override fails rather than falling back. |
+
+The default runtime is under `$XDG_STATE_HOME/brain-dump/` or
+`~/.local/state/brain-dump/`, keyed by the resolved source checkout. `state.json`
+contains a private instance token; never publish it. `server.log` retains
+lifecycle diagnostics without request contents or tokens; the log and lock file
+remain after stop. Use an owner-private directory, not shared storage. POSIX
+directory/file modes are checked (700/600); Windows relies on the selected
+directory's inherited user-private ACLs, not POSIX permission bits.
+
+Results are JSON (`--json` is the default); `--pretty` only changes whitespace.
+Exit 0 means the requested start/stop succeeded or status is running; status
+stopped/stale and lifecycle errors return 1, and invalid arguments return 2.
+`--help` and `--version` are supported. There is no restart, installation,
+boot-service registration, remote binding, deployment or backend API operation.
+
+Only `web/` is served; hidden paths, traversal, symlinks and directory listings
+are rejected. An authenticated loopback `/_cortex/lifecycle` control is internal
+process ownership/shutdown plumbing, not a browser/product API or API-badge
+activity source. Opening the page or its API details makes no backend
 requests. Theme preferences use only `cortex.theme` in browser storage; denied
 storage is visibly reported and does not prevent an in-page theme change.
 
@@ -49,13 +94,20 @@ Run behavioral coverage with Node.js 22+ (no npm packages):
 
 ```sh
 node --test tests/web/*.test.mjs
+python3 -B -m unittest discover -s tests -p test_cortex_server.py -v
 ```
 
-The existing offline CI workflow runs these tests separately from the Python
-suite. Tests cover overlap, out-of-order settlement, body parsing, HTTP errors,
+The existing offline CI workflow runs the Node tests in its separate web job.
+Browser tests cover overlap, out-of-order settlement, body parsing, HTTP errors,
 network errors, cancellation, path/configuration rejection, state subscriptions,
 button disclosure, theme storage failures and a temporary loopback HTTP fixture.
 No reference app or private backend is needed.
+The Python CI matrix explicitly runs lifecycle coverage on Linux, macOS and
+Windows with Python 3.11/3.14 before the full suite, which also discovers it.
+Lifecycle fixtures cover real start/readiness/stop/restart, concurrency,
+idempotency, stale live PIDs, foreign listeners, redirects, invalid/oversized
+state or identity, busy ports, startup failure/timeout, private paths, static
+file boundaries and cleanup. All test workers are bounded and stopped.
 
 ## API adapter boundary
 
@@ -113,11 +165,22 @@ that either app is currently deployed. The API control uses a native button,
 and Escape-to-close with focus return. It is an inline, non-modal disclosure;
 there is no hover timer or focus trap.
 
+The lifecycle interface follows separately reviewed Simple-Todos conventions
+at `4fec68ce252c711d99d6a0421c4c4fc337e86b95`:
+`web-server.sh:11-27` (1.1.2) interpreter selection and strict override, and
+`src/simple_todos/server_lifecycle.py:30-94` (1.0.0) start/stop/status, serialized
+operations, private state/logs and readiness. The Cortex implementation is
+independently written and reuses Brain Bridge's own path validation, locking and
+atomic state helpers. Unlike the reference PID-signalling stop, Cortex asks its
+authenticated server to shut itself down. No private runtime code, configuration,
+data, fixed infrastructure endpoint or service dependency is copied.
+
 ## Remaining product gates
 
 This foundation does not complete or approve the product taxonomy, journeys,
-standalone application/server or versioned API contracts. Those retain their
+full standalone application/server or versioned API contracts. Those retain their
 existing CORTEX2-5 and CORTEX8 ownership and acceptance boundaries. No proposed
 navigation is presented as working. Endpoint selection and authenticated
-integration must wait for the applicable contract; installation, configuration
-validation/port management and release acceptance remain separate work.
+integration must wait for the applicable contract. The source preview's limited
+loopback/port validation does not complete application configuration, base-path
+routing, capability navigation, installation or release acceptance.

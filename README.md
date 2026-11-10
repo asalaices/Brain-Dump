@@ -38,6 +38,12 @@ structure, six shared themes and reusable request-driven API activity components
 It is a static, unconnected foundation: no product API, private source access or
 complete Cortex application is claimed.
 
+From a source checkout, `./cortex_server --start`, `--status` and `--stop`
+manage a loopback-only static preview with verified ownership and readiness.
+Python 3.11+ is required; Windows uses `python cortex_server`.
+See [Cortex setup and lifecycle](docs/CORTEX-WEB.md#run-and-test) for configuration
+and limits. This does not install a service or provide a product API.
+
 The full enterprise roadmap remains the target; this is a development foundation.
 [Managed source documentation](docs/MANAGED-SOURCES.md) describes the implemented
 identity, separate default-deny grants, authenticated policy refresh, source-ID
