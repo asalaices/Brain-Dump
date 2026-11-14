@@ -20,12 +20,14 @@ web/
   components/
     api-status.mjs          request status button and disclosure
     synapses.mjs            configured Brain selection, status and cited Recall
+    workspace-tabs.mjs      Recall/Administration selection and keyboard navigation
   styles/
     themes.css              selected shared palette tokens
     base.css                layout, focus, activity and reduced-motion rules
 tests/web/
   foundation.test.mjs       offline behavioral and local HTTP fixture tests
   synapses.test.mjs         local adapter, privacy and rendering behavior
+  workspace-tabs.test.mjs   tab semantics and shared-connection layout contract
 cortex_server               source-checkout lifecycle launcher
 brain_bridge/
   cortex_server.py          owned loopback preview and private CLI control
@@ -38,6 +40,25 @@ tests/
 Keep transport and activity independent of DOM rendering. Future product
 adapters belong under `web/api/`; they must implement reviewed browser contracts,
 not call infrastructure telemetry or invent replacements for Brain Bridge.
+
+## One application, shared connection
+
+Recall and Administration are folder-style tabs attached to one main content
+panel. Connect, Disconnect, source selection and status live in the common panel
+outside both tab panels and outside the hideable API rail. Tab switching and
+rail hiding do not remove connection access, initiate requests, change grants,
+or clear retained Recall results. Arrow Left/Right wrap between tabs; Home/End
+select the first/last tab. Only the selected tab is in the tab sequence; its
+associated panel has the matching accessible name. Refresh starts at Recall
+while the existing local connection resumes normally.
+
+The owner decision of 2026-11-10 supersedes earlier separate Brain Gate UI/port
+requirements. Privilege separation can be enforced server-side inside one app.
+Administration explicitly says its capabilities are unavailable in this
+read-only pilot, with no fake service, configuration, grant or recovery buttons.
+CORTEX2 records this partial boundary decision, not full taxonomy approval;
+CORTEX19 retains broader capability/security acceptance and BDT48 remains the
+owning operations deliverable needing cross-project scope reconciliation.
 Future screens consume those adapters, not `fetch` scattered through the UI.
 The framework's `brain-bridge` CLI is unchanged. The preview launcher and web
 assets are source-checkout tooling, not an installed application/server command.

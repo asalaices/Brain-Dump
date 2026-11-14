@@ -50,29 +50,48 @@
   <main id="main">
     <p id="theme-notice" role="status" hidden></p>
     <p id="api-drawer-notice" class="notice" role="status" hidden></p>
-    <section>
-      <p class="eyebrow">Owner-only local pilot</p>
-      <h2>Connect to Synapses</h2>
-      <p>Read source status and request cited context through the existing Brain Bridge
-        authority. This is not a shared service, source grant or complete Cortex application.</p>
-      <div class="controls">
-        <label id="synapses-brain-control" for="synapses-brain" hidden>Configured Brain
-          <select id="synapses-brain" disabled><option value="">Not connected</option></select>
-        </label>
-        <button id="synapses-connect" type="button">Connect to Brain</button>
-        <button id="synapses-disconnect" type="button" hidden>Disconnect</button>
+    <div class="cortex-workspace">
+      <div class="workspace-tabs" role="tablist" aria-label="Cortex workspace">
+        <button id="recall-tab" type="button" role="tab" aria-controls="recall-panel" aria-selected="true" tabindex="0">Recall</button>
+        <button id="administration-tab" type="button" role="tab" aria-controls="administration-panel" aria-selected="false" tabindex="-1">Administration</button>
       </div>
-      <p id="synapses-notice" class="notice" role="status">Not connected. Click Connect to Brain. Your connection stays in this page and survives refresh.</p>
-      <p id="synapses-preference" role="status"></p>
-      <p id="synapses-source"></p>
-      <form id="synapses-form" hidden>
-        <label for="synapses-query">Recall from the authorized source
-          <input id="synapses-query" type="search" maxlength="512" required autocomplete="off">
-        </label>
-        <button id="synapses-search" type="submit" disabled>Recall</button>
-      </form>
-      <ol id="synapses-results" aria-label="Cited Synapses matches"></ol>
-    </section>
+      <div class="workspace-body">
+        <div class="workspace-connection" aria-labelledby="connection-heading">
+          <p class="eyebrow">Owner-only local pilot</p>
+          <h2 id="connection-heading">Brain connection</h2>
+          <div class="controls">
+            <label id="synapses-brain-control" for="synapses-brain" hidden>Configured Brain
+              <select id="synapses-brain" disabled><option value="">Not connected</option></select>
+            </label>
+            <button id="synapses-connect" type="button">Connect to Brain</button>
+            <button id="synapses-disconnect" type="button" hidden>Disconnect</button>
+          </div>
+          <p id="synapses-notice" class="notice" role="status">Not connected. Click Connect to Brain. Your connection stays in this page and survives refresh.</p>
+          <p id="synapses-preference" role="status"></p>
+          <p id="synapses-source"></p>
+        </div>
+        <div id="recall-panel" class="workspace-panel" role="tabpanel" aria-labelledby="recall-tab" tabindex="0">
+          <h2>Recall</h2>
+          <p>Request cited context from your authorized Synapses source through Brain Bridge.
+            Connect above to begin. No private results are saved in the browser.</p>
+          <form id="synapses-form" hidden>
+            <label for="synapses-query">Recall from the authorized source
+              <input id="synapses-query" type="search" maxlength="512" required autocomplete="off">
+            </label>
+            <button id="synapses-search" type="submit" disabled>Recall</button>
+          </form>
+          <ol id="synapses-results" aria-label="Cited Synapses matches"></ol>
+        </div>
+        <div id="administration-panel" class="workspace-panel" role="tabpanel" aria-labelledby="administration-tab" tabindex="0" hidden>
+          <h2>Administration</h2>
+          <p>Administration belongs in Cortex, alongside Recall. Connection access stays above both tabs.</p>
+          <p class="notice">Administrative capabilities are not available in this local read-only pilot.</p>
+          <p>Service controls, configuration changes, source grants and recovery actions remain planned.
+            There are no enabled administrative actions here. Future operations require independently
+            enforced server-side permissions and approved control contracts; opening this tab grants no access.</p>
+        </div>
+      </div>
+    </div>
     <noscript><p class="notice">JavaScript is required to connect to Brain, select themes and show API activity.</p></noscript>
   </main>
   <footer>Development foundation - not a complete Cortex application.</footer>

@@ -5,6 +5,13 @@
 >
 > Brain-Dump software is **AGPL-3.0-only**, copyright © 2026 Creative Software Development. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Never copy private operational records, prompts, identities, secrets, or corporate metadata into this public repository.
 
+> **Scoped owner correction — 10 November 2026:** one Cortex UI presents Recall
+> and Administration as attached tabs, with connection controls always visible
+> in the common main panel. Older separate Brain Gate UI/port wording is
+> superseded for presentation; server-side authorization and independent
+> operations acceptance remain required. This does not approve the full taxonomy
+> or implement privileged functions.
+
 ## 1. The idea
 
 **Brain-Dump should evolve from a portable, cited Git-backed memory framework into a developer-centric, permission-aware knowledge and collaboration platform.** A developer should be able to ask *what happened, why, what evidence supports it, what changed, what remains blocked, and who else is working on adjacent problems*—without manually reconstructing months of chats, issues, code reviews, deployments, and handoffs.
@@ -25,7 +32,7 @@ flowchart TB
     CLI["Brain Bridge CLI / agents"]
     API["Authenticated query and metadata service (planned)"]
     Cortex["Cortex / Brain-Cotletex (planned user UI)"]
-    Gate["Brain Gate (planned restricted ops console)"]
+    Gate["Administration in Cortex (planned restricted operations)"]
     CLI --> API
     Cortex --> API
     Gate -->|"privileged, approved operations"| API
@@ -78,7 +85,7 @@ Names are navigation and product metaphors, **not new sources of authority, new 
 | **Reflex** | `reflex` | Configured, approved event-driven action rules with explicit safety gates | Future |
 | **Thalamus** | `routing` | Inspect registered sources and route policy; server still enforces grants | Proposed ops concept |
 | **Brainstem** | `health` | Shared runtime-health diagnostics, not host telemetry ownership | Proposed ops concept |
-| **Brain Gate** | `brain-gate` | Separate, tightly restricted Brain operations/maintenance console | Planned; BDT48 |
+| **Brain Gate / Administration** | `brain-gate` | Restricted operations within Cortex, independently authorized server-side | Planned operations; BDT48 |
 | **Dreaming** | `consolidation-jobs` | Optional offline, consented interpretation and proposed connections | Future; BDT33/34 |
 | **Widgy** | `widgy` | OS-aware corner dashboard and structured bootstrap progress | Separate master-01 lane; WDGY1/2 |
 
@@ -94,7 +101,7 @@ flowchart LR
     CX --> SY["Synapses: explicit relationships"]
     CX --> NM["Neural Map: cited themes and word globe"]
     CX --> PU["Pulse: sync and publication state"]
-    CX -.->|"separate admin access"| BG["Brain Gate: health and control"]
+    CX -.->|"independent server-side permissions"| BG["Administration: planned health and control"]
     ME --> RC["Original cited JSON record"]
     SY --> RC
     NM --> RC
@@ -111,7 +118,14 @@ flowchart LR
 
 **Pulse:** show verified remote snapshot, local indexed commit, sync lag, pending PR receipts, errors, retries and actual publication state. An unmerged proposal is not canonical; a successful source test is not a production deployment.
 
-**Brain Gate:** privileged administrative operations (health, configuration validation, repair, approved restart/rollback), with separate permissions, auditable action receipts and no arbitrary browser-originated shell instructions. **Brain Gate should not be renamed Cortex:** Cortex is the everyday *front door*; Gate is the distinct *control room*. Their styles may be related; privileges are not.
+**Administration (Brain Gate capabilities):** privileged operations such as health,
+configuration validation, repair and approved restart/rollback belong in the
+same Cortex shell, with independent server-side permissions, auditable receipts
+and no arbitrary browser-originated shell instructions. There is no technical
+need for a separate UI or extra port to enforce that boundary. The current
+Administration tab only discloses unavailable/planned capabilities; selecting it
+does not grant access or implement those operations. The `brain-gate` conceptual
+identifier and BDT48 operational ownership remain, without a separate app mandate.
 
 **Widgy** stays in the master-01 lane. It presents host activity and structured bootstrap progress, not organizational knowledge; it does not become the Brain dashboard by reuse or renaming.
 

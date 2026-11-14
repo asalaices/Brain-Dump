@@ -3,6 +3,12 @@ import {createApiActivity} from './api/activity.mjs';
 import {bindApiStatus} from './components/api-status.mjs';
 import {bindTheme} from './theme.mjs';
 import {bindSynapses} from './components/synapses.mjs';
+import {bindWorkspaceTabs} from './components/workspace-tabs.mjs';
+
+bindWorkspaceTabs({
+  tabs: [document.querySelector('#recall-tab'), document.querySelector('#administration-tab')],
+  panels: [document.querySelector('#recall-panel'), document.querySelector('#administration-panel')]
+});
 
 bindTheme({
   root: document.documentElement,

@@ -20,6 +20,13 @@ button:disabled { cursor: default; opacity: .65; }
 #synapses-results a { color: var(--accent); }
 section { background: var(--surface); padding: 1.5rem; border: 1px solid var(--border); border-radius: .75rem; margin-bottom: 1.5rem; }
 .notice { border-left: 3px solid var(--warning); padding-left: 1rem; }
+.workspace-tabs { display: flex; align-items: stretch; gap: .35rem; padding-left: .75rem; }
+.workspace-tabs [role="tab"] { position: relative; margin-bottom: -1px; border-radius: .6rem .6rem 0 0; background: var(--surface-raised); color: var(--muted); justify-content: center; }
+.workspace-tabs [aria-selected="true"] { z-index: 1; background: var(--surface); color: var(--text); border-bottom-color: var(--surface); }
+.workspace-body { background: var(--surface); border: 1px solid var(--border); border-radius: .75rem; padding: 1.5rem; margin-bottom: 1.5rem; }
+.workspace-connection { border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; padding-bottom: .5rem; }
+.workspace-panel { min-width: 0; overflow-wrap: anywhere; }
+.workspace-panel:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 footer, #theme-notice { color: var(--muted); }
 [hidden] { display: none !important; }
 .skip-link { position: absolute; z-index: 120; top: -5rem; left: 5rem; background: var(--surface); color: var(--text); padding: .5rem; }
@@ -62,4 +69,7 @@ footer, #theme-notice { color: var(--muted); }
   header, main, footer { padding: 1rem; }
   header { padding-left: 4rem; }
   .controls { width: 100%; }
+  .workspace-body { padding: 1rem; }
+  .workspace-tabs { padding-left: .5rem; gap: .25rem; }
+  .workspace-tabs [role="tab"] { min-width: 0; padding: .5rem .65rem; font-size: .9rem; }
 }
